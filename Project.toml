@@ -1,0 +1,9 @@
+name = "regression-simulator"
+uuid = "9e8f7a3c-2b4d-4f6a-9c1e-8d3b5a7f2c4e"
+version = "0.1.0"
+
+[deps]
+HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
+
+[compat]
+HTTP = "2.14.2"
