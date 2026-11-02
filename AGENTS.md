@@ -8,9 +8,10 @@ Simple Linear Regression Calculator — Julia-only logic + HTML/CSS UI (no JavaS
 
 - **No JavaScript anywhere.** UI interactivity must come from HTML + CSS only (radio tabs + `:checked`, `<details>`).
 - **Regression math must stay handwritten** in `src/regression.jl`. No GLM.jl / Statistics.jl shortcuts for the core formulas.
-- **Allowed packages:** HTTP.jl, CSV.jl, XLSX.jl only.
+- **Allowed packages:** HTTP.jl, CSV.jl, XLSX.jl, plus Julia standard libraries (Random, Dates, Printf, etc.).
 - **Excel / Google Sheets parity required:** `b = SLOPE`, `a = INTERCEPT`, `r = CORREL`, `R² = RSQ`, std. error = `STEYX`, predicted `ŷ = FORECAST.LINEAR`.
 - Do not modify `src/regression.jl` or `test/excel_match.jl` unless a test fails.
+- `src/regression.jl` may be extended only to add RAE and RRSE fields; existing tests must keep passing.
 
 ## Commands
 
@@ -22,12 +23,14 @@ Simple Linear Regression Calculator — Julia-only logic + HTML/CSS UI (no JavaS
 
 - Entrypoints: `src/main.jl` (server + routes), `src/regression.jl` (math), `src/importer.jl` (CSV/XLSX → vectors), `src/render.jl` (HTML/SVG builders), `src/export.jl` (CSV download); styles in `static/style.css`.
 - Stateless by design: no client-side state; each POST re-renders from form fields.
+- **Documented stateless exception:** Phase 3 may keep the parsed upload in a server-side in-memory `Dict` keyed by a random token (carried in a hidden field), capped at 5 entries with oldest-first eviction and protected by a lock. Nothing else may keep server state.
 - Routes: `GET /`, `POST /calculate`, `POST /rows`, `POST /upload`, `POST /select`, `POST /predict`, `POST /export`, `GET /static/style.css`.
 
 ## Current state
 
-- Repo contains only `PLAN.md` — implementation scaffold (`src/`, `static/`, `test/`, `Project.toml`) not yet created.
-- Work is tracked phase-by-phase in `PLAN.md` (§8 build phases); phase 1 (`regression.jl` + `excel_match.jl`) is done.
+- Phases 1 and 2 done; `src/main.jl`, `src/render.jl`, `static/style.css`, `Project.toml` and `Manifest.toml` exist; `DESIGN.md` is the visual spec.
+- Work is tracked phase-by-phase in `PLAN.md` (§8 build phases); phase 1 (`regression.jl` + `excel_match.jl`) and phase 2 (`src/main.jl`, `src/render.jl`, `static/style.css`) are done.
+- **Phase rule:** update this Current state section at the end of every phase.
 
 ## Testing quirks
 
