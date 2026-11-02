@@ -33,7 +33,7 @@ function fmt(v::Float64)::String
     return s
 end
 
-function render_grid_panel(rows)::String
+function render_grid_panel(rows; token::String = "")::String
     t = IOBuffer()
     print(t, """
 <section class="tab-panel" id="panel-data" role="tabpanel">
@@ -43,6 +43,7 @@ function render_grid_panel(rows)::String
   <div class="panel-body">
     <p class="panel-intro">Enter X and Y per row. Blank rows are ignored. Press Enter to calculate.</p>
     <form method="post" action="/rows" class="grid-form">
+      <input type="hidden" name="token" value="$(token)" />
       <input type="submit" name="action" value="calculate" class="visually-hidden" tabindex="-1" aria-hidden="true" />
       <table class="grid">
         <thead>
@@ -179,20 +180,71 @@ function render_result_panel(result, error, status)::String
     return String(take!(t))
 end
 
+function render_preprocess_panel(u, tok::String)::String
+    t = IOBuffer()
+    print(t, """<section class="tab-panel" id="panel-preprocess" role="tabpanel">
+  <div class="panel-header">
+    <h2>Preprocess</h2>
+  </div>
+  <div class="panel-body">
+    <p class="panel-intro">Upload a .csv or .xlsx file, pick X and Y attributes, then apply to the grid.</p>
+""")
+    if u === nothing
+        print(t, """    <div class="panel-note">No file loaded. Upload a .csv or .xlsx file to pick attributes.</div>
+""")
+    else
+        xname = u.x_col <= length(u.columns) ? String(u.columns[u.x_col]) : "?"
+        yname = u.y_col <= length(u.columns) ? String(u.columns[u.y_col]) : "?"
+        print(t, "    <div class=\"panel-note\">Selected attribute: X = " * xname * " &middot; Y = " * yname * "</div>\n")
+        print(t, """    <form method="post" action="/rows" class="grid-form">
+      <input type="hidden" name="token" value="TOKENPLACEHOLDER" />
+""")
+        for i in 1:length(u.columns)
+            print(t, "      <div class=\"attr-row\">\n")
+            print(t, "        <label><input type=\"radio\" name=\"attr_x_" * string(i) * "\" value=\"" * string(i) * "\" /> X: " * String(u.columns[i]) * "</label>\n")
+            print(t, "        <label><input type=\"radio\" name=\"attr_y_" * string(i) * "\" value=\"" * string(i) * "\" /> Y: " * String(u.columns[i]) * "</label>\n")
+            print(t, "        <input type=\"submit\" name=\"attr_show\" value=\"" * string(i) * "\" class=\"btn-add\" />\n")
+            print(t, "      </div>\n")
+        end
+        print(t, """      <input type="submit" name="action" value="apply" class="btn-add" />
+    </form>
+""")
+        print(t, """    <form method="post" action="/select" class="grid-form">
+      <input type="hidden" name="token" value="TOKENPLACEHOLDER" />
+      <input type="hidden" name="x" value="XPLACEHOLDER" />
+      <input type="hidden" name="y" value="YPLACEHOLDER" />
+      <input type="submit" name="action" value="apply" class="btn-add" />
+    </form>
+""")
+    end
+    print(t, """  </div>
+</section>
+""")
+    html = String(take!(t))
+    html = replace(html, "TOKENPLACEHOLDER" => tok)
+    html = replace(html, "XPLACEHOLDER" => (u === nothing ? "" : String(u.columns[u.x_col])))
+    html = replace(html, "YPLACEHOLDER" => (u === nothing ? "" : String(u.columns[u.y_col])))
+    return html
+end
+
 function render_page(
     rows,
     result,
     error,
     status::String,
     tab::String,
+    token::String = "",
+    upload = nothing,
 )::String
-    grid_panel = render_grid_panel(rows)
+    grid_panel = render_grid_panel(rows; token = token)
     calc_panel = render_calculation_panel(result)
     result_panel = render_result_panel(result, error, status)
+    preprocess_panel = render_preprocess_panel(upload, token)
 
     checked_data = tab == "data" ? " checked" : ""
     checked_calculation = tab == "calculation" ? " checked" : ""
     checked_result = tab == "result" ? " checked" : ""
+    checked_preprocess = tab == "preprocess" ? " checked" : ""
 
     status_html = replace(status, r"(\d+(?:\.\d+)?)" => m -> "<span class=\"status-num\">" * String(m) * "</span>")
     status_bar_html = "<footer class=\"statusbar\">\n  <span class=\"status-badge\"></span>\n" * status_html * "</footer>\n</div>\n\n</body>\n</html>\n"
@@ -232,10 +284,13 @@ function render_page(
   <label class="tab-label" for="tab-calculation">Calculation</label>
   <input type="radio" name="tab" id="tab-result" value="result"$(checked_result)>
   <label class="tab-label" for="tab-result">Result</label>
+  <input type="radio" name="tab" id="tab-preprocess" value="preprocess"$(checked_preprocess)>
+  <label class="tab-label" for="tab-preprocess">Preprocess</label>
 </nav>
 
 <div class="tab-panels">
 """ * grid_panel * """
+""" * preprocess_panel * """
 """ * calc_panel * """
 """ * result_panel * """
 </div>
