@@ -1,5 +1,5 @@
 # src/render.jl - HTML builders for the Simple Linear Regression Calculator UI.
-# Pure string builders. No JavaScript.
+# Pure string builders. No client-side scripting.
 
 function html_escape(s::AbstractString)::String
     out = IOBuffer()
@@ -104,11 +104,11 @@ function render_calculation_panel(result)::String
     print(t, "        <tr>\n")
     print(t, "          <th>X</th>\n")
     print(t, "          <th>Y</th>\n")
-    print(t, "          <th>x&#x0304;</th>\n")
-    print(t, "          <th>&#x0233; (y&#x0304;)</th>\n")
-    print(t, "          <th>(x&#x0304;)(&#x0233;)</th>\n")
-    print(t, "          <th>(x&#x0304;)&#x00B2;</th>\n")
-    print(t, "          <th>Predicted Y</th>\n")
+    print(t, "          <th>x &#x2212; x&#x0304;</th>\n")
+    print(t, "          <th>y &#x2212; &#x0233;</th>\n")
+    print(t, "          <th>(x &#x2212; x&#x0304;)(&#x2212; &#x0233;)</th>\n")
+    print(t, "          <th>(x &#x2212; x&#x0304;)&#x00B2;</th>\n")
+    print(t, "          <th>&#x0176;</th>\n")
     print(t, "        </tr>\n")
     print(t, "      </thead>\n")
     print(t, "      <tbody>\n")
@@ -136,9 +136,9 @@ function render_calculation_panel(result)::String
     print(t, "        </tr>\n")
     print(t, "      </tfoot>\n")
     print(t, "    </table>\n")
-    line_b = "b = &#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = " * fmt(result.sxy) * " / " * fmt(result.sxx) * " = " * fmt(result.b)
+    line_b = "b = &#x03A3;(x &#x2212; x&#x0304;)(&#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = " * fmt(result.sxy) * " / " * fmt(result.sxx) * " = " * fmt(result.b)
     line_a = "a = &#x0233; &#x2212; b&#183;x&#x0304; = " * fmt(result.ybar) * " &#x2212; (" * fmt(result.b) * ")(" * fmt(result.xbar) * ") = " * fmt(result.a)
-    line_eq = "&#x0178; = " * fmt(result.a) * " + " * fmt(result.b) * "x"
+    line_eq = "&#x0177; = " * fmt(result.a) * " + " * fmt(result.b) * "x"
     print(t, "    <div class=\"formula\">\n")
     print(t, "      <p><code>", line_b, "</code></p>\n")
     print(t, "      <p><code>", line_a, "</code></p>\n")
@@ -160,7 +160,7 @@ function render_result_panel(result, error, status)::String
         print(t, "    <p class=\"error-text\">", html_escape(error), "</p>\n")
     elseif result !== nothing
         lines = Vector{String}()
-        push!(lines, "&#x0178; = " * fmt(result.a) * " + " * fmt(result.b) * "x")
+        push!(lines, "&#x0177; = " * fmt(result.a) * " + " * fmt(result.b) * "x")
         push!(lines, "n    = " * string(result.n))
         push!(lines, "b    = " * fmt(result.b))
         push!(lines, "a    = " * fmt(result.a))
@@ -192,7 +192,11 @@ function render_page(
     checked_data = tab == "data" ? " checked" : ""
     checked_calculation = tab == "calculation" ? " checked" : ""
     checked_result = tab == "result" ? " checked" : ""
-    html = """
+
+    status_html = replace(status, r"(\d+(?:\.\d+)?)" => m -> "<span class=\"status-num\">" * String(m) * "</span>")
+    status_bar_html = "<footer class=\"statusbar\">\n  <span class=\"status-badge\"></span>\n" * status_html * "</footer>\n</div>\n\n</body>\n</html>\n"
+
+    return """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -202,9 +206,22 @@ function render_page(
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div class="window">
+<div class="titlebar">
+  <span class="badge">&#x25A3;</span>
+  <span class="title-text">Linear Regression Calculator</span>
+  <span class="winbtn">_</span>
+  <span class="winbtn">x</span>
+</div>
+<div class="menubar">
+  <span class="menu-item">File</span>
+  <span class="menu-item">Edit</span>
+  <span class="menu-item">View</span>
+  <span class="menu-item">Help</span>
+</div>
 <header class="app-header">
   <h1>Simple Linear Regression Calculator</h1>
-  <p class="tagline">Weka-style &middot; b = SLOPE &middot; a = INTERCEPT &middot; r = CORREL &middot; R&#x00B2; = RSQ &middot; &#x0178; = FORECAST.LINEAR</p>
+  <p class="tagline">Weka-style &middot; b = SLOPE &middot; a = INTERCEPT &middot; r = CORREL &middot; R&#x00B2; = RSQ &middot; &#x0177; = FORECAST.LINEAR</p>
 </header>
 
 <nav class="tabs" role="tablist">
@@ -222,7 +239,18 @@ function render_page(
 """ * result_panel * """
 </div>
 
-<footer class="statusbar">""" * status * """</footer>
+<div class="toolbar">
+  <span class="tool-btn">A</span>
+  <span class="tool-btn">&#x1F5BC;</span>
+  <span class="tool-btn">&#x2665;</span>
+  <span class="tool-btn">&#x2605;</span>
+  <span class="tool-credit">Simple Linear Regression Calculator</span>
+</div>
+
+<footer class="statusbar">
+  <span class="status-badge"></span>
+""" * status_html * """</footer>
+</div>
 
 </body>
 </html>
