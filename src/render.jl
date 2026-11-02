@@ -71,6 +71,7 @@ function render_grid_panel(rows)::String
     </table>
     <div class="grid-actions">
       <input type="submit" name="action" value="add" class="btn-add" />
+      <input type="submit" name="action" value="calculate" class="btn-add" />
       <span class="grid-hint">Press Enter to run the calculation.</span>
     </div>
     </form>

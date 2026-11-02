@@ -54,10 +54,34 @@ function parse_form(body::String)::Dict{String,String}
     return d
 end
 
+function read_full_body(req)::String
+    body = req.body
+    buf = Vector{UInt8}(undef, 65536)
+    parts = String[]
+    while true
+        n = HTTP.body_read!(body, buf)
+        n == 0 && break
+        push!(parts, String(buf[1:n]))
+    end
+    return join(parts, "")
+end
+
+const MAX_BODY_BYTES = 12 * 1024 * 1024
+
+struct RequestBodyTooLargeError <: Exception
+    size::Int
+end
+
+function Base.showerror(io::IO, e::RequestBodyTooLargeError)
+    print(io, "Request body too large: ", e.size, " bytes (maximum allowed: ", MAX_BODY_BYTES, " bytes)")
+end
+
 function read_form(req)::Dict{String,String}
-    dst = Vector{UInt8}(undef, 65536)
-    n = HTTP.body_read!(req.body, dst)
-    return parse_form(String(Vector{UInt8}(dst)[1:n]))
+    body = read_full_body(req)
+    if ncodeunits(body) > MAX_BODY_BYTES
+        throw(RequestBodyTooLargeError(ncodeunits(body)))
+    end
+    return parse_form(body)
 end
 
 function get_rows(qs::Dict{String,String})::Vector{Tuple{String,String}}
@@ -160,8 +184,39 @@ function handler(req)::HTTP.Response
     try
         return _handler(req)
     catch e
+        if e isa RequestBodyTooLargeError
+            return oversize_response(sprint(showerror, e))
+        end
         return HTTP.Response(500; body = "ERROR: " * sprint(showerror, e), headers = ["Content-Type" => "text/plain"])
     end
+end
+
+function oversize_response(msg)::HTTP.Response
+    html = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Linear Regression Calculator</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="window">
+<div class="tab-panels">
+<section class="tab-panel" id="panel-result" role="tabpanel">
+<div class="panel-header">
+<h2>Result</h2>
+</div>
+<div class="panel-body">
+<p class="error-text">$(msg)</p>
+</div>
+</section>
+</div>
+</div>
+</body>
+</html>
+"""
+    return HTTP.Response(413; body = html, headers = ["Content-Type" => "text/html; charset=utf-8"])
 end
 
 function _handler(req)::HTTP.Response
