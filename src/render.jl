@@ -445,7 +445,7 @@ function render_page(
     checked_calculation = tab == "calculation" ? " checked" : ""
     checked_result = tab == "result" ? " checked" : ""
 
-    status_html = replace(status, r"(\d+(?:\.\d+)?)" => m -> "<span class=\"status-num\">" * String(m) * "</span>")
+    status_html = replace(status, r"&#?[0-9A-Za-z]+;|\d+(?:\.\d+)?" => m -> startswith(m, "&") ? String(m) : "<span class=\"status-num\">" * String(m) * "</span>")
     status_bar_html = "<footer class=\"statusbar\">\n  <span class=\"status-badge\"></span>\n" * status_html * "</footer>\n</div>\n\n</body>\n</html>\n"
 
     return """

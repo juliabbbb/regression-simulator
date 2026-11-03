@@ -298,7 +298,7 @@ function get_rows(qs::Dict{String,String})::Vector{Tuple{String,String}}
     for k in keys(qs)
         startswith(k, "x_") || continue
         i = tryparse(Int, k[3:end])
-        i === nothing || (max_i = max(max_i, i))
+        (i !== nothing && i <= MAX_IMPORT_ROWS) && (max_i = max(max_i, i))
     end
     rows = Tuple{String,String}[]
     for i in 1:max_i
@@ -518,6 +518,7 @@ function handle_upload(req)::HTTP.Response
         return oversize_response("Request body too large: " * string(declared) * " bytes (maximum allowed: " * string(MAX_BODY_BYTES) * " bytes)")
     end
     body_bytes = read_full_body_bytes(req)
+    decimals = DEFAULT_DECIMALS
 
     parts = HTTP.parse_multipart_form(ct, body_bytes)
     if parts === nothing
@@ -569,7 +570,7 @@ function handle_upload(req)::HTTP.Response
     try
         check_row_cap(count_rows(cols))
     catch e
-        return html_response(render_page(Tuple{String,String}[], nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, html_escape(sprint(showerror, e)), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
     end
 
     if isempty(cols) || count_rows(cols) == 0
@@ -694,11 +695,12 @@ function oversize_response(msg)::HTTP.Response
 end
 
 function _handler(req)::HTTP.Response
+    path = String(first(split(req.target, '?')))
     if req.method == "GET"
-        if req.target == "/"
+        if path == "/"
             status = string(length(SAMPLE_ROWS)) * " &middot; press Calculate"
             return html_response(render_page(SAMPLE_ROWS, nothing, nothing, status, "data"))
-        elseif req.target == "/static/style.css"
+        elseif path == "/static/style.css"
             return css_response()
         end
     elseif req.method == "POST"
@@ -720,5 +722,7 @@ function _handler(req)::HTTP.Response
 end
 
 if abspath(PROGRAM_FILE) == @__FILE__
-    HTTP.serve(handler, "127.0.0.1", 8080)
+    host = get(ENV, "HOST", "127.0.0.1")
+    port = something(tryparse(Int, get(ENV, "PORT", "8080")), 8080)
+    HTTP.serve(handler, host, port)
 end
