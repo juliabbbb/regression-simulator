@@ -172,10 +172,10 @@ The formula lines and the SVG are built from the **actual computed values**, so 
 
 | # | Phase | Status |
 |---|---|---|
-| 1 | `regression.jl` + `test/excel_match.jl` using the sample dataset | Done (run `julia test/excel_match.jl` to confirm locally) |
+| 1 | `regression.jl` + `test/excel_match.jl` using the sample dataset | Done (run `julia --project test/excel_match.jl` to confirm locally) |
 | 2 | Server, manual grid, calculation table, a / b formula steps | Done |
-| 3 | CSV / XLSX import with sheet and column pickers | Done (run `julia test/phase3_test.jl` to confirm locally) |
-| 4 | SVG chart + Weka-style summary panel + Predict box | Next |
+| 3 | CSV / XLSX import with sheet and column pickers | Done (run `julia --project test/phase3_test.jl` to confirm locally) |
+| 4 | SVG chart + Weka-style summary panel + Predict box | Done (plus attribute histogram and display decimals) |
 | 5 | Apply the design md to `style.css` | |
 | 6 | CSV export, README, GitHub-ready cleanup | |
 

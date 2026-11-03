@@ -16,12 +16,15 @@ Simple Linear Regression Calculator — Julia-only logic + HTML/CSS UI (no JavaS
 ## Commands
 
 - Setup: `julia --project -e 'using Pkg; Pkg.instantiate()'`
-- Tests: `julia test/excel_match.jl` (sample dataset + edge cases; Excel cross-check tolerance: relative diff < 1e-9)
+- Tests (each needs the project environment; run every file in `test/`):
+  - `julia --project test/excel_match.jl` — sample dataset + edge cases; Excel cross-check tolerance: relative diff < 1e-9
+  - `julia --project test/phase3_test.jl` — import, row/payload caps, upload store, end-to-end upload/select/calculate, fix-pack A/B regressions
+  - `julia --project test/chart_test.jl` — SVG chart: circle count, line through (x̄, ȳ), residual toggle hooks, nice ticks/formatter, edge cases
 - Run server: `julia --project src/main.jl` → open `http://localhost:8080`
 
 ## Architecture notes
 
-- Entrypoints: `src/main.jl` (server + routes), `src/regression.jl` (math), `src/importer.jl` (CSV/XLSX → vectors), `src/render.jl` (HTML/SVG builders), `src/export.jl` (CSV download); styles in `static/style.css`.
+- Entrypoints: `src/main.jl` (server + routes), `src/regression.jl` (math), `src/importer.jl` (CSV/XLSX → vectors), `src/render.jl` (HTML builders), `src/chart.jl` (pure-Julia SVG scatter plot + histogram), `src/export.jl` (CSV download, not yet written); styles in `static/style.css`.
 - Stateless by design: no client-side state; each POST re-renders from form fields.
 - **Documented stateless exception:** Phase 3 may keep the parsed upload in a server-side in-memory `Dict` keyed by a random token (carried in a hidden field), capped at 5 entries with oldest-first eviction and protected by a lock. Nothing else may keep server state.
 - Routes: `GET /`, `POST /calculate`, `POST /rows`, `POST /upload`, `POST /select`, `POST /predict`, `POST /export`, `GET /static/style.css`.
@@ -31,6 +34,10 @@ Simple Linear Regression Calculator — Julia-only logic + HTML/CSS UI (no JavaS
 - Phases 1, 2, and 3 done; `src/importer.jl` (CSV/XLSX import & attribute selection), `src/main.jl`, `src/render.jl`, `static/style.css`, `Project.toml`, `Manifest.toml`, and test suites `test/excel_match.jl` and `test/phase3_test.jl` exist; `DESIGN.md` is the visual spec.
 - Work is tracked phase-by-phase in `PLAN.md` (§8 build phases); phase 1 (`regression.jl` + `excel_match.jl`), phase 2 (`src/main.jl`, `src/render.jl`, `static/style.css`), and phase 3 (`importer.jl`, Preprocess tab UI, attribute selection, validation, limits) are done.
 - **Phase rule:** update this Current state section at the end of every phase.
+- **Fix pack A (hardening, done):** `UploadData` has a keyword constructor so tests never depend on the field count; all dynamic text (file name, sheet name, column names, error text, echoed token) is HTML-escaped before it reaches the page, while intentional entities such as `&middot;` stay as they are; `/rows` and `/calculate` use exactly the submitted grid rows (`SAMPLE_ROWS` is rendered by `GET /` only) and fewer than 2 usable rows renders the existing "At least 2 data points are required" error; `rm_*` keys are validated against `1..length(rows)` and only the smallest valid index is removed; `fmt` normalizes negative zero to `0`. One regression test per fix lives at the end of `test/phase3_test.jl`.
+- Both suites are run with the project environment (`julia --project test/…`); running them without `--project` fails because CSV/XLSX are not on the load path.
+- **Phase 4 done:** `src/chart.jl` builds the SVG scatter plot in the Calculation panel (one `<circle class="point">` per row, regression line through (x̄, ȳ), axes, grid, nice 1/2/5 × 10^k ticks, ~5% padding, residual lines toggled by `#show-resid` + `~ svg .resid` with no JS) and the SVG histogram in the Preprocess "Selected attribute" panel (10 equal-width bins, a single bar when all values are identical). The Result tab shows a Weka-style summary (equation, instances, r, R², standard error, MAE, RMSE, RAE %, RRSE %; NaN → N/A) and a Predict box that posts the full grid plus `predict_x` to `POST /predict`, re-rendering with ŷ (styled error for empty or non-numeric X). Display precision is a `decimals` select (2–8, default 4) in the Data panel, carried as a hidden field in every other form; `fmt(v, decimals)` only rounds for display and calculations stay full Float64. Chart/histogram styling is CSS classes only, using the design tokens.
+- **Fix pack B (hardening, done):** request bodies are capped before buffering — an oversized declared `Content-Length` is rejected up front with 413, and the streaming reader aborts as soon as the running total passes `MAX_BODY_BYTES` (10 MiB), so a lying/missing Content-Length cannot smuggle a large body; this applies to `read_form` and `handle_upload`. Every upload-store create and update goes through `save_upload` (via `store_upload` / `update_upload`), which maintains `UPLOADS`, `UPLOAD_ORDER`, the 5-entry cap and oldest-first eviction under `UPLOAD_LOCK`; `get_upload` also drops an expired token from `UPLOAD_ORDER`. The skipped-row count lives in the stored `UploadData` and is no longer read from a form field (the hidden `skipped` input is gone). Tab radios are direct siblings placed before `<nav class="tabs">` and `<div class="tab-panels">`, so `#tab-x:checked ~ .tab-panels #panel-x` and `#tab-x:checked ~ .tabs label[for="tab-x"]` work with no `:has()`. Regression tests are at the end of `test/phase3_test.jl`; all four tabs were confirmed by clicking them in headless Chrome.
 
 ## Testing quirks
 

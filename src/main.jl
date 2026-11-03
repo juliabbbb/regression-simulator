@@ -4,6 +4,7 @@ using UUIDs
 include(joinpath(@__DIR__, "regression.jl"))
 include(joinpath(@__DIR__, "importer.jl"))
 include(joinpath(@__DIR__, "render.jl"))
+include(joinpath(@__DIR__, "chart.jl"))
 
 const SAMPLE_ROWS = Tuple{String,String}[
     ("1", "2"),
@@ -56,22 +57,6 @@ function parse_form(body::String)::Dict{String,String}
     return d
 end
 
-function read_full_body_bytes(req)::Vector{UInt8}
-    body = req.body
-    buf = Vector{UInt8}(undef, 65536)
-    out = IOBuffer()
-    while true
-        n = HTTP.body_read!(body, buf)
-        n == 0 && break
-        write(out, @view buf[1:n])
-    end
-    return take!(out)
-end
-
-function read_full_body(req)::String
-    return String(read_full_body_bytes(req))
-end
-
 const MAX_BODY_BYTES = 10 * 1024 * 1024
 
 struct RequestBodyTooLargeError <: Exception
@@ -82,12 +67,45 @@ function Base.showerror(io::IO, e::RequestBodyTooLargeError)
     print(io, "Request body too large: ", e.size, " bytes (maximum allowed: ", MAX_BODY_BYTES, " bytes)")
 end
 
-function read_form(req)::Dict{String,String}
-    bytes = read_full_body_bytes(req)
-    if length(bytes) > MAX_BODY_BYTES
-        throw(RequestBodyTooLargeError(length(bytes)))
+"Declared Content-Length, or nothing when the header is absent or malformed."
+function content_length(req)::Union{Int, Nothing}
+    raw = strip(HTTP.header(req, "Content-Length", ""))
+    isempty(raw) && return nothing
+    n = tryparse(Int, raw)
+    (n === nothing || n < 0) && return nothing
+    return n
+end
+
+"""
+Read the request body, refusing it as soon as it can exceed `max_bytes`.
+The declared Content-Length is checked before reading anything, and the
+running total is checked after every chunk, so a body that lies about its
+length is still rejected without being fully buffered.
+"""
+function read_full_body_bytes(req; max_bytes::Int = MAX_BODY_BYTES)::Vector{UInt8}
+    declared = content_length(req)
+    declared !== nothing && declared > max_bytes && throw(RequestBodyTooLargeError(declared))
+
+    body = req.body
+    buf = Vector{UInt8}(undef, 65536)
+    out = IOBuffer()
+    total = 0
+    while true
+        n = HTTP.body_read!(body, buf)
+        n == 0 && break
+        total += n
+        total > max_bytes && throw(RequestBodyTooLargeError(total))
+        write(out, @view buf[1:n])
     end
-    return parse_form(String(bytes))
+    return take!(out)
+end
+
+function read_full_body(req)::String
+    return String(read_full_body_bytes(req))
+end
+
+function read_form(req)::Dict{String,String}
+    return parse_form(String(read_full_body_bytes(req)))
 end
 
 struct UploadData
@@ -98,6 +116,36 @@ struct UploadData
     x_col::Int
     y_col::Int
     rows::Vector{Tuple{String,String}}
+    filename::String
+    raw_bytes::Vector{UInt8}
+    sheet_names::Vector{String}
+    current_sheet::String
+    selected_attr::Int
+    skipped_count::Int
+end
+
+"""
+Keyword constructor so callers (and tests) never depend on the field order or
+field count: `UploadData(columns = ["x"], values = [["1"]], x_col = 1)`.
+"""
+function UploadData(;
+    columns::Vector{String} = String[],
+    values::Vector{Vector{String}} = Vector{Vector{String}}(),
+    first_row_header::Bool = true,
+    timestamp::Float64 = time(),
+    x_col::Int = 1,
+    y_col::Int = 1,
+    rows::Vector{Tuple{String,String}} = Tuple{String,String}[],
+    filename::String = "",
+    raw_bytes::Vector{UInt8} = UInt8[],
+    sheet_names::Vector{String} = String[],
+    current_sheet::String = "",
+    selected_attr::Int = 1,
+    skipped_count::Int = 0,
+)
+    return UploadData(columns, values, first_row_header, timestamp, x_col, y_col,
+                      rows, filename, raw_bytes, sheet_names, current_sheet,
+                      selected_attr, skipped_count)
 end
 
 const UPLOADS = Dict{String, UploadData}()
@@ -106,20 +154,109 @@ const UPLOAD_LOCK = ReentrantLock()
 const MAX_STORE_ENTRIES = 5
 const TOKEN_TTL_SECONDS = 3600
 
+# Display-only precision; calculations always use full Float64.
+const DEFAULT_DECIMALS = 4
+const MIN_DECIMALS = 2
+const MAX_DECIMALS = 8
+
+function read_decimals(qs::Dict{String,String})::Int
+    d = tryparse(Int, get(qs, "decimals", ""))
+    (d === nothing || d < MIN_DECIMALS || d > MAX_DECIMALS) && return DEFAULT_DECIMALS
+    return d
+end
+
 function make_token()::String
     return "tok_" * lowercase(string(uuid4()))
 end
 
-function store_upload(tok::String, columns::Vector{String}, values::Vector{Vector{String}}, first_row_header::Bool, x_col::Int, y_col::Int, rows::Vector{Tuple{String,String}})::String
+"""
+The single write path for the upload store. Every create and every update goes
+through here so `UPLOADS` and `UPLOAD_ORDER` can never drift: re-storing a token
+moves it to the newest position, the store is capped at `MAX_STORE_ENTRIES`, and
+oldest-first eviction removes the matching order entries.
+"""
+function save_upload(tok::String, u::UploadData)::String
     lock(UPLOAD_LOCK) do
-        if length(UPLOAD_ORDER) >= MAX_STORE_ENTRIES
-            old = splice!(UPLOAD_ORDER, 1)
-            delete!(UPLOADS, old)
+        if haskey(UPLOADS, tok)
+            delete!(UPLOADS, tok)
+            i = findfirst(==(tok), UPLOAD_ORDER)
+            i === nothing || deleteat!(UPLOAD_ORDER, i)
         end
-        UPLOADS[tok] = UploadData(columns, values, first_row_header, time(), x_col, y_col, rows)
+        while length(UPLOADS) >= MAX_STORE_ENTRIES && !isempty(UPLOAD_ORDER)
+            delete!(UPLOADS, popfirst!(UPLOAD_ORDER))
+        end
+        UPLOADS[tok] = u
         push!(UPLOAD_ORDER, tok)
     end
     return tok
+end
+
+function store_upload(
+    tok::String,
+    columns::Vector{String},
+    values::Vector{Vector{String}},
+    first_row_header::Bool,
+    x_col::Int,
+    y_col::Int,
+    rows::Vector{Tuple{String,String}};
+    timestamp::Float64 = time(),
+    filename::String = "",
+    raw_bytes::Vector{UInt8} = UInt8[],
+    sheet_names::Vector{String} = String[],
+    current_sheet::String = "",
+    selected_attr::Int = 1,
+    skipped_count::Int = 0,
+)::String
+    return save_upload(tok, UploadData(
+        columns = columns,
+        values = values,
+        first_row_header = first_row_header,
+        timestamp = timestamp,
+        x_col = x_col,
+        y_col = y_col,
+        rows = rows,
+        filename = filename,
+        raw_bytes = raw_bytes,
+        sheet_names = sheet_names,
+        current_sheet = current_sheet,
+        selected_attr = selected_attr,
+        skipped_count = skipped_count,
+    ))
+end
+
+"Re-store an existing upload with selected fields replaced (refreshes the TTL)."
+function update_upload(
+    tok::String,
+    u::UploadData;
+    columns::Vector{String} = u.columns,
+    values::Vector{Vector{String}} = u.values,
+    first_row_header::Bool = u.first_row_header,
+    x_col::Int = u.x_col,
+    y_col::Int = u.y_col,
+    rows::Vector{Tuple{String,String}} = u.rows,
+    filename::String = u.filename,
+    raw_bytes::Vector{UInt8} = u.raw_bytes,
+    sheet_names::Vector{String} = u.sheet_names,
+    current_sheet::String = u.current_sheet,
+    selected_attr::Int = u.selected_attr,
+    skipped_count::Int = u.skipped_count,
+)::UploadData
+    new_u = UploadData(
+        columns = columns,
+        values = values,
+        first_row_header = first_row_header,
+        x_col = x_col,
+        y_col = y_col,
+        rows = rows,
+        filename = filename,
+        raw_bytes = raw_bytes,
+        sheet_names = sheet_names,
+        current_sheet = current_sheet,
+        selected_attr = selected_attr,
+        skipped_count = skipped_count,
+    )
+    save_upload(tok, new_u)
+    return new_u
 end
 
 function get_upload(tok::String)::Union{UploadData, Nothing}
@@ -128,6 +265,8 @@ function get_upload(tok::String)::Union{UploadData, Nothing}
         d === nothing && return nothing
         if (time() - d.timestamp) > TOKEN_TTL_SECONDS
             delete!(UPLOADS, tok)
+            i = findfirst(==(tok), UPLOAD_ORDER)
+            i === nothing || deleteat!(UPLOAD_ORDER, i)
             return nothing
         end
         return d
@@ -202,28 +341,73 @@ function css_response()::HTTP.Response
     return HTTP.Response(200; body = read(css_path, String), headers = ["Content-Type" => "text/css; charset=utf-8"])
 end
 
-function grid_response(rows; token::String = "")::HTTP.Response
-    status = string(length(rows)) * " &middot; press Calculate"
-    return html_response(render_page(rows, nothing, nothing, status, "data", token))
+function grid_response(rows; token::String = "", skipped::Int = 0, decimals::Int = DEFAULT_DECIMALS)::HTTP.Response
+    status = if skipped > 0
+        string(length(rows)) * " (" * string(skipped) * " skipped for missing values) &middot; press Calculate"
+    else
+        string(length(rows)) * " &middot; press Calculate"
+    end
+    return html_response(render_page(rows, nothing, nothing, status, "data", token; skipped_count = skipped, decimals = decimals))
 end
 
-function results_response(result, err, rows; token::String = "")::HTTP.Response
+function results_response(result, err, rows; token::String = "", skipped::Int = 0,
+                          decimals::Int = DEFAULT_DECIMALS, predicted = nothing,
+                          predict_x::String = "")::HTTP.Response
     if err !== nothing
-        return html_response(render_page(rows, nothing, err, "Error: " * err, "result", token))
+        return html_response(render_page(rows, result, err, "Error: " * html_escape(err), "result", token;
+                                         skipped_count = skipped, decimals = decimals,
+                                         predicted = predicted, predict_x = predict_x))
     end
-    status = "n = " * string(result.n) * " &middot; b = " * fmt(result.b) * " &middot; a = " * fmt(result.a) * " &middot; R&#x00B2; = " * fmt(result.r2)
-    return html_response(render_page(rows, result, nothing, status, "result", token))
+    status = if skipped > 0
+        "n = " * string(result.n) * " (" * string(skipped) * " skipped for missing values) &middot; b = " * fmt(result.b, decimals) * " &middot; a = " * fmt(result.a, decimals) * " &middot; R² = " * fmt(result.r2, decimals)
+    else
+        "n = " * string(result.n) * " &middot; b = " * fmt(result.b, decimals) * " &middot; a = " * fmt(result.a, decimals) * " &middot; R² = " * fmt(result.r2, decimals)
+    end
+    return html_response(render_page(rows, result, nothing, status, "result", token;
+                                     skipped_count = skipped, decimals = decimals,
+                                     predicted = predicted, predict_x = predict_x))
 end
 
 function handle_rows(qs)::HTTP.Response
     action = get(qs, "action", "calculate")
     tok = get(qs, "token", "")
     u = valid_token(tok)
+    decimals = read_decimals(qs)
+
+    if action == "change_sheet"
+        if u === nothing
+            msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
+            return html_response(render_page(Tuple{String,String}[], nothing, nothing, msg, "preprocess", ""; preprocess_error = msg, decimals = decimals))
+        end
+        new_sheet = get(qs, "sheet", "")
+        new_names, new_cols, new_sheets, chosen = try
+            read_upload_columns_with_sheet(u.raw_bytes, u.filename; first_row_header = u.first_row_header, sheet_name = new_sheet)
+        catch e
+            return html_response(render_page(Tuple{String,String}[], nothing, nothing, html_escape(sprint(showerror, e)), "preprocess", tok, u; preprocess_error = sprint(showerror, e), decimals = decimals))
+        end
+        new_x = 1
+        new_y = min(2, length(new_cols))
+        new_u = update_upload(
+            tok,
+            u;
+            columns = new_names,
+            values = new_cols,
+            x_col = new_x,
+            y_col = new_y,
+            rows = Tuple{String,String}[],
+            sheet_names = new_sheets,
+            current_sheet = chosen,
+            selected_attr = 1,
+            skipped_count = 0,
+        )
+        status = "Loaded sheet '" * html_escape(chosen) * "' (" * string(count_rows(new_cols)) * " instances, " * string(length(new_names)) * " attributes)"
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals))
+    end
 
     if haskey(qs, "attr_show") || action == "show"
         if u === nothing
             msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
-            return html_response(render_page(SAMPLE_ROWS, nothing, nothing, msg, "preprocess", ""; preprocess_error = msg))
+            return html_response(render_page(Tuple{String,String}[], nothing, nothing, msg, "preprocess", ""; preprocess_error = msg, decimals = decimals))
         end
         new_x = u.x_col
         new_y = u.y_col
@@ -235,23 +419,30 @@ function handle_rows(qs)::HTTP.Response
             yi = tryparse(Int, qs["y_col"])
             (yi !== nothing && 1 <= yi <= length(u.columns)) && (new_y = yi)
         end
-        lock(UPLOAD_LOCK) do
-            UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), new_x, new_y, u.rows)
+        sel_attr = u.selected_attr
+        if haskey(qs, "attr_show")
+            ai = tryparse(Int, qs["attr_show"])
+            (ai !== nothing && 1 <= ai <= length(u.columns)) && (sel_attr = ai)
         end
-        u2 = get_upload(tok)
-        status = "Selected attribute: X = " * u2.columns[u2.x_col] * " &middot; Y = " * u2.columns[u2.y_col]
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, status, "preprocess", tok, u2))
+        new_u = update_upload(tok, u; x_col = new_x, y_col = new_y, selected_attr = sel_attr)
+        status = "Selected attribute: X = " * html_escape(new_u.columns[new_u.x_col]) * " &middot; Y = " * html_escape(new_u.columns[new_u.y_col])
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals))
     end
 
-    grid_rows = get_rows(qs)
-    rows = !isempty(grid_rows) ? grid_rows : (u !== nothing && !isempty(u.rows) ? u.rows : SAMPLE_ROWS)
+    # POSTs use exactly the rows that were submitted; SAMPLE_ROWS is only for GET /.
+    rows = get_rows(qs)
+    # The skipped-row count is server-side state in the upload record, never a form field.
+    skipped = u === nothing ? 0 : u.skipped_count
 
-    remove_idx = 0
+    # Collect every submitted rm_* key, ignore out-of-range values, and remove
+    # only the smallest valid index so the result never depends on Dict order.
+    rm_indices = Int[]
     for key in keys(qs)
         startswith(key, "rm_") || continue
         v = tryparse(Int, key[4:end])
-        v === nothing || (remove_idx = v)
+        (v !== nothing && 1 <= v <= length(rows)) && push!(rm_indices, v)
     end
+    remove_idx = isempty(rm_indices) ? 0 : minimum(rm_indices)
 
     if remove_idx != 0
         kept = Tuple{String,String}[]
@@ -260,46 +451,77 @@ function handle_rows(qs)::HTTP.Response
             push!(kept, row)
         end
         if u !== nothing
-            lock(UPLOAD_LOCK) do
-                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), u.x_col, u.y_col, kept)
-            end
+            update_upload(tok, u; rows = kept)
         end
-        return grid_response(kept; token = tok)
+        return grid_response(kept; token = tok, skipped = skipped, decimals = decimals)
     elseif action == "add"
         new_rows = copy(rows)
         push!(new_rows, ("", ""))
         if u !== nothing
-            lock(UPLOAD_LOCK) do
-                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), u.x_col, u.y_col, new_rows)
-            end
+            update_upload(tok, u; rows = new_rows)
         end
-        return grid_response(new_rows; token = tok)
+        return grid_response(new_rows; token = tok, skipped = skipped, decimals = decimals)
     elseif action == "calculate"
         result, err = run_regression(rows)
-        return results_response(result, err, rows; token = tok)
+        return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals)
     end
-    return grid_response(rows; token = tok)
+    return grid_response(rows; token = tok, skipped = skipped, decimals = decimals)
 end
 
 function handle_calculate(qs)::HTTP.Response
     tok = get(qs, "token", "")
     u = valid_token(tok)
-    grid_rows = get_rows(qs)
-    rows = !isempty(grid_rows) ? grid_rows : (u !== nothing && !isempty(u.rows) ? u.rows : SAMPLE_ROWS)
+    decimals = read_decimals(qs)
+    # POSTs use exactly the rows that were submitted; SAMPLE_ROWS is only for GET /.
+    rows = get_rows(qs)
+    # The skipped-row count is server-side state in the upload record, never a form field.
+    skipped = u === nothing ? 0 : u.skipped_count
     result, err = run_regression(rows)
-    return results_response(result, err, rows; token = tok)
+    return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals)
+end
+
+function handle_predict(qs)::HTTP.Response
+    tok = get(qs, "token", "")
+    u = valid_token(tok)
+    decimals = read_decimals(qs)
+    rows = get_rows(qs)
+    skipped = u === nothing ? 0 : u.skipped_count
+    predict_x = String(strip(get(qs, "predict_x", "")))
+
+    result, err = run_regression(rows)
+    if err !== nothing
+        return results_response(nothing, err, rows; token = tok, skipped = skipped,
+                                decimals = decimals, predict_x = predict_x)
+    end
+
+    xv = tryparse(Float64, predict_x)
+    if xv === nothing
+        msg = isempty(predict_x) ? "Enter a value for X to predict." :
+              "Non-numeric value '" * predict_x * "' for the new X."
+        return results_response(result, msg, rows; token = tok, skipped = skipped,
+                                decimals = decimals, predict_x = predict_x)
+    end
+
+    predicted = result.a + result.b * xv
+    status = "ŷ = " * fmt(predicted, decimals) * " for X = " * fmt(xv, decimals)
+    return html_response(render_page(rows, result, nothing, status, "result", tok;
+                                     skipped_count = skipped, decimals = decimals,
+                                     predicted = predicted, predict_x = predict_x))
 end
 
 function handle_upload(req)::HTTP.Response
     ct = HTTP.header(req, "Content-Type", "")
-    body_bytes = read_full_body_bytes(req)
-    if length(body_bytes) > MAX_BODY_BYTES
-        return oversize_response("Request body too large: " * string(length(body_bytes)) * " bytes (maximum allowed: " * string(MAX_BODY_BYTES) * " bytes)")
+    # Reject on the declared length before touching the body, then keep the
+    # streaming cap in read_full_body_bytes for lying/missing Content-Length.
+    declared = content_length(req)
+    if declared !== nothing && declared > MAX_BODY_BYTES
+        return oversize_response("Request body too large: " * string(declared) * " bytes (maximum allowed: " * string(MAX_BODY_BYTES) * " bytes)")
     end
+    body_bytes = read_full_body_bytes(req)
 
     parts = HTTP.parse_multipart_form(ct, body_bytes)
     if parts === nothing
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Invalid upload format", "preprocess", ""; preprocess_error = "Could not parse multipart form data."))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, "Invalid upload format", "preprocess", ""; preprocess_error = "Could not parse multipart form data.", decimals = decimals))
     end
 
     file_part_name = ""
@@ -307,6 +529,7 @@ function handle_upload(req)::HTTP.Response
     has_header_field = false
     first_row_header = false
     has_submit_marker = false
+    decimals_raw = ""
 
     for p in parts
         if p.name == "first_row_header"
@@ -315,6 +538,8 @@ function handle_upload(req)::HTTP.Response
             first_row_header = (val in ("1", "true", "on", "yes"))
         elseif p.name == "upload_submitted"
             has_submit_marker = true
+        elseif p.name == "decimals"
+            decimals_raw = strip(String(read(p.data)))
         end
         if p.filename !== nothing && !isempty(p.filename)
             name_l = lowercase(String(p.filename))
@@ -329,42 +554,58 @@ function handle_upload(req)::HTTP.Response
         first_row_header = true
     end
 
+    decimals = read_decimals(Dict{String,String}("decimals" => decimals_raw))
+
     if isempty(file_part_name) || isempty(file_part_bytes)
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "No file uploaded", "preprocess", ""; preprocess_error = "No valid .csv or .xlsx file uploaded."))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, "No file uploaded", "preprocess", ""; preprocess_error = "No valid .csv or .xlsx file uploaded.", decimals = decimals))
     end
 
-    names, cols = try
-        read_upload_columns(file_part_bytes, file_part_name; first_row_header = first_row_header)
+    names, cols, sheets, chosen_sheet = try
+        read_upload_columns_with_sheet(file_part_bytes, file_part_name; first_row_header = first_row_header)
     catch e
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e)))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
     end
 
     try
         check_row_cap(count_rows(cols))
     catch e
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e)))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
     end
 
     if isempty(cols) || count_rows(cols) == 0
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Uploaded file contains no data rows", "preprocess", ""; preprocess_error = "Uploaded file contains no data rows."))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, "Uploaded file contains no data rows", "preprocess", ""; preprocess_error = "Uploaded file contains no data rows.", decimals = decimals))
     end
 
     tok = make_token()
     x_col = 1
     y_col = min(2, length(cols))
-    u = UploadData(names, cols, first_row_header, time(), x_col, y_col, Tuple{String,String}[])
-    store_upload(tok, names, cols, first_row_header, x_col, y_col, Tuple{String,String}[])
+    u = UploadData(
+        columns = names,
+        values = cols,
+        first_row_header = first_row_header,
+        x_col = x_col,
+        y_col = y_col,
+        rows = Tuple{String,String}[],
+        filename = file_part_name,
+        raw_bytes = file_part_bytes,
+        sheet_names = sheets,
+        current_sheet = chosen_sheet,
+        selected_attr = 1,
+        skipped_count = 0,
+    )
+    save_upload(tok, u)
 
-    status = "File uploaded: " * file_part_name * " &middot; " * string(count_rows(cols)) * " rows &middot; pick X and Y attributes"
-    return html_response(render_page(SAMPLE_ROWS, nothing, nothing, status, "preprocess", tok, u))
+    status = "File uploaded: " * html_escape(file_part_name) * " &middot; " * string(count_rows(cols)) * " rows &middot; pick X and Y attributes"
+    return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, u; decimals = decimals))
 end
 
 function handle_select(qs)::HTTP.Response
     tok = get(qs, "token", "")
     u = valid_token(tok)
+    decimals = read_decimals(qs)
     if u === nothing
         msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, msg, "preprocess", ""; preprocess_error = msg))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, msg, "preprocess", ""; preprocess_error = msg, decimals = decimals))
     end
 
     x_idx = 0
@@ -391,7 +632,7 @@ function handle_select(qs)::HTTP.Response
     end
 
     if !(1 <= x_idx <= length(u.columns)) || !(1 <= y_idx <= length(u.columns))
-        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Unknown column for X or Y", "preprocess", tok, u; preprocess_error = "Unknown column for X or Y."))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, "Unknown column for X or Y", "preprocess", tok, u; preprocess_error = "Unknown column for X or Y.", decimals = decimals))
     end
 
     cleaned_rows, skipped = try
@@ -399,20 +640,18 @@ function handle_select(qs)::HTTP.Response
     catch e
         if e isa NonNumericInputError
             err_msg = sprint(showerror, e)
-            return html_response(render_page(SAMPLE_ROWS, nothing, nothing, err_msg, "preprocess", tok, u; preprocess_error = err_msg))
+            return html_response(render_page(Tuple{String,String}[], nothing, nothing, html_escape(err_msg), "preprocess", tok, u; preprocess_error = err_msg, decimals = decimals))
         end
         rethrow()
     end
 
-    lock(UPLOAD_LOCK) do
-        UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), x_idx, y_idx, cleaned_rows)
-    end
+    new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, rows = cleaned_rows, skipped_count = skipped)
 
     status = skipped > 0 ?
-        "Loaded " * string(length(cleaned_rows)) * " rows (skipped " * string(skipped) * " empty rows) &middot; press Calculate" :
+        "Loaded " * string(length(cleaned_rows)) * " rows (" * string(skipped) * " skipped for missing values) &middot; press Calculate" :
         "Loaded " * string(length(cleaned_rows)) * " rows &middot; press Calculate"
 
-    return html_response(render_page(cleaned_rows, nothing, nothing, status, "data", tok, u))
+    return html_response(render_page(cleaned_rows, nothing, nothing, status, "data", tok, new_u; skipped_count = skipped, decimals = decimals))
 end
 
 function handler(req)::HTTP.Response
@@ -473,6 +712,8 @@ function _handler(req)::HTTP.Response
             return handle_calculate(qs)
         elseif req.target == "/select"
             return handle_select(qs)
+        elseif req.target == "/predict"
+            return handle_predict(qs)
         end
     end
     return HTTP.Response(404; body = "Not Found")

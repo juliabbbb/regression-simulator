@@ -13,6 +13,8 @@
   --cyan: #33C6F2;
   --danger: #D9304F;
   --btn-face: #FFA6C4;
+  /* DESIGN.md has no --primary token; primary accent is --title. */
+  --primary: var(--title);
 }
 
 * {
@@ -114,6 +116,20 @@ body {
 }
 
 /* ---------- Tabs ---------- */
+/* Tab radios sit directly before .tabs and .tab-panels so the plain sibling
+   selectors below work in every browser. Hidden visually, still focusable. */
+input[name="tab"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
@@ -138,10 +154,10 @@ body {
   top: -1px;
 }
 
-#tab-data:checked + .tab-label,
-#tab-preprocess:checked + .tab-label,
-#tab-calculation:checked + .tab-label,
-#tab-result:checked + .tab-label {
+#tab-data:checked ~ .tabs label[for="tab-data"],
+#tab-preprocess:checked ~ .tabs label[for="tab-preprocess"],
+#tab-calculation:checked ~ .tabs label[for="tab-calculation"],
+#tab-result:checked ~ .tabs label[for="tab-result"] {
   background: var(--title);
   color: #ffffff;
 }
@@ -160,11 +176,7 @@ body {
 #tab-data:checked ~ .tab-panels #panel-data,
 #tab-preprocess:checked ~ .tab-panels #panel-preprocess,
 #tab-calculation:checked ~ .tab-panels #panel-calculation,
-#tab-result:checked ~ .tab-panels #panel-result,
-.window:has(#tab-data:checked) #panel-data,
-.window:has(#tab-preprocess:checked) #panel-preprocess,
-.window:has(#tab-calculation:checked) #panel-calculation,
-.window:has(#tab-result:checked) #panel-result {
+#tab-result:checked ~ .tab-panels #panel-result {
   display: block;
 }
 
@@ -530,6 +542,213 @@ pre.mono .num {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* ---------- Chart (SVG) ---------- */
+.chart-wrap {
+  margin-top: 16px;
+}
+
+.chart-resid-toggle {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--title);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.chart-resid-label {
+  margin-left: 6px;
+  font-size: 13px;
+  color: var(--ink);
+  cursor: pointer;
+}
+
+.chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 8px;
+  background: var(--paper);
+  border: 3px solid var(--outline);
+}
+
+.point {
+  fill: var(--hilite);
+  stroke: var(--outline);
+  stroke-width: 1;
+}
+
+.regline {
+  stroke: var(--primary);
+  stroke-width: 3;
+}
+
+.axis {
+  stroke: var(--outline);
+  stroke-width: 2;
+}
+
+.grid {
+  stroke: var(--menu);
+  stroke-width: 1;
+}
+
+.tick-label {
+  fill: var(--ink);
+  font-family: "VT323", "DotGothic16", monospace;
+  font-size: 13px;
+}
+
+.axis-title {
+  fill: var(--ink-soft);
+  font-family: "VT323", "DotGothic16", monospace;
+  font-size: 16px;
+}
+
+/* Residuals are pure-CSS toggled: the checkbox is a sibling before the svg. */
+.resid {
+  display: none;
+  stroke: var(--ink-soft);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+#show-resid:checked ~ svg .resid {
+  display: inline;
+}
+
+/* ---------- Result summary ---------- */
+.summary {
+  margin-bottom: 16px;
+}
+
+.summary-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hilite);
+  margin-bottom: 8px;
+}
+
+.summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "VT323", "DotGothic16", monospace;
+  font-size: 16px;
+}
+
+.summary-table th,
+.summary-table td {
+  border: 2px solid var(--outline);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.summary-table th {
+  background: var(--menu);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.summary-table td {
+  background: var(--paper);
+  text-align: right;
+}
+
+.summary-eq {
+  color: var(--hilite);
+  font-weight: 700;
+}
+
+/* ---------- Predict ---------- */
+.predict-form {
+  margin-top: 16px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.predict-label {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.predict-input {
+  width: 130px;
+  padding: 6px 8px;
+  font-size: 16px;
+  font-family: "VT323", "DotGothic16", monospace;
+  background: var(--paper);
+  color: var(--ink);
+  border: 3px solid var(--outline);
+  border-radius: 0;
+}
+
+.predict-answer {
+  font-family: "VT323", "DotGothic16", monospace;
+  font-size: 20px;
+  color: var(--hilite);
+  margin: 10px 0 0;
+}
+
+/* ---------- Decimals ---------- */
+.decimals-label {
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.select-decimals {
+  padding: 4px 8px;
+  font-size: 13px;
+  font-family: "VT323", "DotGothic16", monospace;
+  background: var(--paper);
+  color: var(--ink);
+  border: 3px solid var(--outline);
+  border-radius: 0;
+}
+
+/* ---------- Histogram (SVG) ---------- */
+.histogram-wrap {
+  margin-top: 12px;
+}
+
+.histogram-caption {
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 6px;
+}
+
+.histogram {
+  display: block;
+  width: 100%;
+  max-width: 420px;
+  height: auto;
+  background: var(--paper);
+  border: 3px solid var(--outline);
+}
+
+.bar {
+  fill: var(--hilite);
+  stroke: var(--outline);
+  stroke-width: 1;
+}
+
+.hist-axis {
+  stroke: var(--outline);
+  stroke-width: 2;
+}
+
+.hist-grid {
+  stroke: var(--menu);
+  stroke-width: 1;
+}
+
+.hist-label {
+  fill: var(--ink);
+  font-family: "VT323", "DotGothic16", monospace;
+  font-size: 12px;
 }
 
 /* ---------- Scrollbars ---------- */

@@ -29,6 +29,8 @@ struct SLRResult
     se::Float64              # std. error of estimate (n-2), like STEYX
     mae::Float64
     rmse::Float64
+    rae::Float64             # relative absolute error; NaN when sst == 0
+    rrse::Float64            # root relative squared error; NaN when sst == 0
 end
 
 function slr(xs::AbstractVector{<:Real}, ys::AbstractVector{<:Real})
@@ -66,8 +68,13 @@ function slr(xs::AbstractVector{<:Real}, ys::AbstractVector{<:Real})
     mae  = sum(abs.(resid)) / n
     rmse = sqrt(sse / n)
 
+    # Relative errors are undefined when Y has no variance (sst == 0).
+    rae  = sst == 0 ? NaN : sum(abs.(resid)) / sum(abs.(dy))
+    rrse = sst == 0 ? NaN : sqrt(sse / sst)
+
     return SLRResult(n, x, y, xbar, ybar, dx, dy, dxdy, dx2, sxy, sxx,
-                     b, a, yhat, resid, sse, sst, r, r2, se, mae, rmse)
+                     b, a, yhat, resid, sse, sst, r, r2, se, mae, rmse,
+                     rae, rrse)
 end
 
 end # module

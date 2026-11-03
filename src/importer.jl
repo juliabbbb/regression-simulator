@@ -17,6 +17,49 @@ function Base.showerror(io::IO, e::NonNumericInputError)
     print(io, "Row ", e.row, ": non-numeric value '", e.value, "' in column '", e.col_name, "'")
 end
 
+struct AttributeStats
+    name::String
+    total_count::Int
+    missing_count::Int
+    missing_pct::Float64
+    distinct_count::Int
+    is_numeric::Bool
+    min_val::Union{Float64, Nothing}
+    max_val::Union{Float64, Nothing}
+    mean_val::Union{Float64, Nothing}
+    stddev_val::Union{Float64, Nothing}
+end
+
+function compute_attribute_stats(values::Vector{String}, col_name::String)::AttributeStats
+    total = length(values)
+    missing_count = count(v -> strip(v) == "", values)
+    missing_pct = total > 0 ? (missing_count / total) * 100.0 : 0.0
+    non_empty = [strip(v) for v in values if strip(v) != ""]
+    distinct_count = length(unique(non_empty))
+
+    nums = Float64[]
+    all_num = !isempty(non_empty)
+    for s in non_empty
+        val = tryparse(Float64, s)
+        if val !== nothing
+            push!(nums, val)
+        else
+            all_num = false
+        end
+    end
+
+    if all_num && !isempty(nums)
+        n = length(nums)
+        mn = minimum(nums)
+        mx = maximum(nums)
+        avg = sum(nums) / n
+        sdev = n >= 2 ? sqrt(sum((x - avg)^2 for x in nums) / (n - 1)) : 0.0
+        return AttributeStats(col_name, total, missing_count, missing_pct, distinct_count, true, mn, mx, avg, sdev)
+    else
+        return AttributeStats(col_name, total, missing_count, missing_pct, distinct_count, false, nothing, nothing, nothing, nothing)
+    end
+end
+
 function _csv_columns(body::String; first_row_header::Bool=true)::Tuple{Vector{String},Vector{Vector{String}}}
     f = CSV.File(IOBuffer(body); header=first_row_header)
     ks = collect(propertynames(f))
@@ -32,22 +75,35 @@ function _csv_columns(body::String; first_row_header::Bool=true)::Tuple{Vector{S
     return names, cols
 end
 
-function _xlsx_columns(bytes::Vector{UInt8}; first_row_header::Bool=true, sheet_name::String="Data")::Tuple{Vector{String},Vector{Vector{String}}}
+function _xlsx_sheetnames(bytes::Vector{UInt8})::Vector{String}
+    xf = XLSX.readxlsx(IOBuffer(bytes))
+    return String[String(s) for s in XLSX.sheetnames(xf)]
+end
+
+function _xlsx_columns(bytes::Vector{UInt8}; first_row_header::Bool=true, sheet_name::String="")::Tuple{Vector{String},Vector{Vector{String}},String}
     xf = XLSX.readxlsx(IOBuffer(bytes))
     avail_sheets = XLSX.sheetnames(xf)
-    isempty(avail_sheets) && return String[], Vector{Vector{String}}()
-    ws = (sheet_name in avail_sheets) ? XLSX.getsheet(xf, sheet_name) : XLSX.getsheet(xf, first(avail_sheets))
+    isempty(avail_sheets) && return String[], Vector{Vector{String}}(), ""
+    chosen_sheet = ""
+    if !isempty(sheet_name) && (sheet_name in avail_sheets)
+        chosen_sheet = sheet_name
+    elseif "Data" in avail_sheets
+        chosen_sheet = "Data"
+    else
+        chosen_sheet = String(first(avail_sheets))
+    end
+    ws = XLSX.getsheet(xf, chosen_sheet)
     dim = XLSX.get_dimension(ws)
-    dim === nothing && return String[], Vector{Vector{String}}()
+    dim === nothing && return String[], Vector{Vector{String}}(), chosen_sheet
     last_row = Int(XLSX.row_number(dim.stop))
-    last_row == 0 && return String[], Vector{Vector{String}}()
+    last_row == 0 && return String[], Vector{Vector{String}}(), chosen_sheet
 
     rows = Vector{Vector{String}}()
     for r in 1:last_row
         rowvals = [_to_str(x) for x in vec(XLSX.getdata(ws, r, :))]
         push!(rows, rowvals)
     end
-    isempty(rows) && return String[], Vector{Vector{String}}()
+    isempty(rows) && return String[], Vector{Vector{String}}(), chosen_sheet
 
     ncols = maximum(length(r) for r in rows)
     for r in rows
@@ -70,17 +126,25 @@ function _xlsx_columns(bytes::Vector{UInt8}; first_row_header::Bool=true, sheet_
             push!(cols[i], rowvals[i])
         end
     end
+    return names, cols, chosen_sheet
+end
+
+function read_upload_columns(data, filename::String; first_row_header::Bool=true, sheet_name::String="")
+    names, cols, _, _ = read_upload_columns_with_sheet(data, filename; first_row_header = first_row_header, sheet_name = sheet_name)
     return names, cols
 end
 
-function read_upload_columns(data, filename::String; first_row_header::Bool=true, sheet_name::String="Data")
+function read_upload_columns_with_sheet(data, filename::String; first_row_header::Bool=true, sheet_name::String="")
     name_l = lowercase(String(filename))
     if endswith(name_l, ".xlsx")
         bytes = data isa Vector{UInt8} ? data : Vector{UInt8}(codeunits(String(data)))
-        return _xlsx_columns(bytes; first_row_header = first_row_header, sheet_name = sheet_name)
+        sheets = _xlsx_sheetnames(bytes)
+        names, cols, chosen = _xlsx_columns(bytes; first_row_header = first_row_header, sheet_name = sheet_name)
+        return names, cols, sheets, chosen
     elseif endswith(name_l, ".csv")
         str = data isa String ? data : String(copy(data))
-        return _csv_columns(str; first_row_header = first_row_header)
+        names, cols = _csv_columns(str; first_row_header = first_row_header)
+        return names, cols, String[], ""
     end
     throw(ErrorException("Unsupported file type: " * String(filename)))
 end

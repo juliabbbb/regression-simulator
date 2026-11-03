@@ -23,10 +23,25 @@ using .Regression
     @test r.se ≈ 0.8944271909999157
     @test r.mae ≈ 0.64
     @test r.rmse ≈ 0.6928203230275508
+    @test r.sse ≈ 2.4
+    @test r.sst ≈ 8.8
+    @test r.rae ≈ 3.2 / 5.2
+    @test r.rae ≈ 0.6153846153846154
+    @test r.rrse ≈ sqrt(2.4 / 8.8)
+    @test r.rrse ≈ 0.5222329678670935
 end
 
 @testset "edge cases" begin
     @test_throws ArgumentError slr([1], [2])
     @test_throws ArgumentError slr([1, 2], [1, 2, 3])
     @test_throws ArgumentError slr([3, 3, 3], [1, 2, 3])
+end
+
+@testset "all identical Y gives NaN for r, R², RAE and RRSE" begin
+    r = slr([1, 2, 3, 4], [5, 5, 5, 5])
+    @test r.sst == 0.0
+    @test isnan(r.r)
+    @test isnan(r.r2)
+    @test isnan(r.rae)
+    @test isnan(r.rrse)
 end
