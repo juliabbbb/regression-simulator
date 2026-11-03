@@ -1,0 +1,19 @@
+# Render Blueprint — deploy with: Render Dashboard > New > Blueprint > pick this repo.
+# Render has no native Julia runtime, so the service builds the repo's Dockerfile.
+services:
+  - type: web
+    name: regression-calculator
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    region: oregon
+    # "/" renders the sample grid and returns 200; used for zero-downtime deploys.
+    healthCheckPath: /
+    autoDeployTrigger: commit
+    envVars:
+      # Render requires the server to listen on 0.0.0.0.
+      # PORT is injected by Render (10000 by default) — src/main.jl reads it.
+      - key: HOST
+        value: 0.0.0.0
+      - key: JULIA_NUM_THREADS
+        value: "1"

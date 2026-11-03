@@ -5,6 +5,7 @@ include(joinpath(@__DIR__, "regression.jl"))
 include(joinpath(@__DIR__, "importer.jl"))
 include(joinpath(@__DIR__, "render.jl"))
 include(joinpath(@__DIR__, "chart.jl"))
+include(joinpath(@__DIR__, "export.jl"))
 
 const SAMPLE_ROWS = Tuple{String,String}[
     ("1", "2"),
@@ -509,6 +510,18 @@ function handle_predict(qs)::HTTP.Response
                                      predicted = predicted, predict_x = predict_x))
 end
 
+function handle_export(qs)::HTTP.Response
+    tok = get(qs, "token", "")
+    u = valid_token(tok)
+    decimals = read_decimals(qs)
+    rows = get_rows(qs)
+    skipped = u === nothing ? 0 : u.skipped_count
+    result, err = run_regression(rows)
+    # Bad or too little data: show the normal error page instead of a broken file.
+    err !== nothing && return results_response(nothing, err, rows; token = tok, skipped = skipped, decimals = decimals)
+    return csv_response(result)
+end
+
 function handle_upload(req)::HTTP.Response
     ct = HTTP.header(req, "Content-Type", "")
     # Reject on the declared length before touching the body, then keep the
@@ -564,7 +577,7 @@ function handle_upload(req)::HTTP.Response
     names, cols, sheets, chosen_sheet = try
         read_upload_columns_with_sheet(file_part_bytes, file_part_name; first_row_header = first_row_header)
     catch e
-        return html_response(render_page(Tuple{String,String}[], nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, html_escape(sprint(showerror, e)), "preprocess", ""; preprocess_error = sprint(showerror, e), decimals = decimals))
     end
 
     try
@@ -704,18 +717,20 @@ function _handler(req)::HTTP.Response
             return css_response()
         end
     elseif req.method == "POST"
-        if req.target == "/upload"
+        if path == "/upload"
             return handle_upload(req)
         end
         qs = read_form(req)
-        if req.target == "/rows"
+        if path == "/rows"
             return handle_rows(qs)
-        elseif req.target == "/calculate"
+        elseif path == "/calculate"
             return handle_calculate(qs)
-        elseif req.target == "/select"
+        elseif path == "/select"
             return handle_select(qs)
-        elseif req.target == "/predict"
+        elseif path == "/predict"
             return handle_predict(qs)
+        elseif path == "/export"
+            return handle_export(qs)
         end
     end
     return HTTP.Response(404; body = "Not Found")

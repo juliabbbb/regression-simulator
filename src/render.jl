@@ -86,6 +86,7 @@ $(String(take!(decimals_options)))      </select>
       <span class="grid-hint">Press Enter to run the calculation.</span>
     </div>
     </form>
+    </div>
 </section>
 """)
     return String(take!(t))
@@ -216,6 +217,7 @@ function render_result_panel(
         print(t, "      <label for=\"predict-x\" class=\"predict-label\">Predict Y for X:</label>\n")
         print(t, "      <input type=\"text\" id=\"predict-x\" name=\"predict_x\" class=\"predict-input\" value=\"", html_escape(predict_x), "\" autocomplete=\"off\" />\n")
         print(t, "      <input type=\"submit\" value=\"Predict\" class=\"btn btn-add\" />\n")
+         print(t, "      <div class=\"export-actions\"><button type=\"submit\" formaction=\"/export\" class=\"btn btn-secondary\">Download CSV</button></div>\n")
         print(t, "    </form>\n")
         if predicted !== nothing
             print(t, "    <p class=\"predict-answer\">&#x0177; = <strong>", fmt(predicted, decimals), "</strong></p>\n")

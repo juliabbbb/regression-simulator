@@ -1,5 +1,3 @@
-@import url('https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;700&family=Silkscreen&family=VT323&family=DotGothic16&display=swap');
-
 :root {
   --page: #FFC4D8;
   --title: #EE4B93;
@@ -15,6 +13,10 @@
   --btn-face: #FFA6C4;
   /* DESIGN.md has no --primary token; primary accent is --title. */
   --primary: var(--title);
+
+  /* No external fonts: the pixel faces are used when installed, otherwise a system monospace. */
+  --font-ui: "Pixelify Sans", "Silkscreen", ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
+  --font-num: "VT323", "DotGothic16", ui-monospace, "SF Mono", Menlo, Consolas, "Courier New", monospace;
 }
 
 * {
@@ -31,7 +33,7 @@ body {
   min-height: 100vh;
   background: var(--page);
   color: var(--ink);
-  font-family: "Pixelify Sans", "Silkscreen", "VT323", monospace;
+  font-family: var(--font-ui);
   font-size: 16px;
   line-height: 1.45;
   image-rendering: pixelated;
@@ -73,15 +75,25 @@ body {
   color: #ffffff;
   font-size: 22px;
   letter-spacing: 0.04em;
-  font-family: "Pixelify Sans", "Silkscreen", "VT323", monospace;
+  font-family: var(--font-ui);
 }
 
 .winbtn {
   margin-left: auto;
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 12px;
+  color: var(--ink);
   background: var(--btn-face);
   border: 3px solid var(--outline);
+}
+
+.winbtn + .winbtn {
+  margin-left: 0;
 }
 
 /* ---------- Menu bar ---------- */
@@ -198,6 +210,7 @@ input[name="tab"] {
   background: var(--paper);
   border: 3px solid var(--outline);
   padding: 16px;
+  overflow-x: auto;
 }
 
 .panel-intro {
@@ -207,7 +220,7 @@ input[name="tab"] {
 }
 
 .panel-note {
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
   color: var(--ink-soft);
   margin: 0 0 12px;
@@ -254,7 +267,7 @@ input[name="tab"] {
   width: 100%;
   padding: 6px 8px;
   font-size: 16px;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   background: var(--paper);
   color: var(--ink);
   border: 3px solid var(--outline);
@@ -270,6 +283,7 @@ input[name="tab"] {
 .grid-actions {
   margin-top: 12px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
@@ -280,8 +294,11 @@ input[name="tab"] {
 }
 
 button,
-input[type="submit"].btn {
+input[type="submit"] {
+  font-family: var(--font-ui);
   font-size: 13px;
+  cursor: pointer;
+  text-transform: capitalize;
   padding: 6px 12px;
   background: var(--btn-face);
   color: var(--ink);
@@ -300,6 +317,11 @@ input[type="submit"].btn-remove,
 .btn-secondary {
   background: var(--btn-face);
   color: var(--ink);
+}
+
+.btn-remove {
+  min-width: 32px;
+  padding: 2px 8px;
 }
 
 .btn-add:hover,
@@ -386,6 +408,24 @@ input[type="submit"].btn-remove:active,
   background: var(--paper);
 }
 
+.calc-table.attr-table {
+  min-width: 0;
+}
+
+.calc-table.attr-table th,
+.calc-table.attr-table td {
+  text-align: center;
+}
+
+.calc-table.attr-table th:nth-child(4),
+.calc-table.attr-table td:nth-child(4) {
+  text-align: left;
+}
+
+.calc-table.attr-table tbody td {
+  color: var(--ink);
+}
+
 .attr-name {
   cursor: pointer;
   font-weight: bold;
@@ -399,8 +439,9 @@ input[type="submit"].btn-remove:active,
 /* ---------- Calculation table ---------- */
 .calc-table {
   width: 100%;
+  min-width: 560px;
   border-collapse: collapse;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
 }
 
@@ -422,8 +463,18 @@ input[type="submit"].btn-remove:active,
   text-align: left;
 }
 
+.calc-table tbody td {
+  background: var(--paper);
+  color: var(--hilite);
+}
+
+.calc-table tbody tr:nth-child(odd) td {
+  background: #FFE6EA;
+}
+
 .calc-table tfoot td {
   background: var(--menu);
+  color: var(--ink);
   font-weight: 700;
 }
 
@@ -433,7 +484,7 @@ input[type="submit"].btn-remove:active,
 }
 
 .formula p {
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
   background: var(--menu);
   border: 3px dashed var(--outline);
@@ -442,8 +493,9 @@ input[type="submit"].btn-remove:active,
   color: var(--ink);
 }
 
-.equation {
-  font-family: "VT323", "DotGothic16", monospace;
+.equation,
+.formula p.equation {
+  font-family: var(--font-num);
   font-size: 28px;
   font-weight: 700;
   color: var(--hilite);
@@ -452,7 +504,7 @@ input[type="submit"].btn-remove:active,
 
 /* ---------- Result panel ---------- */
 pre.mono {
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 18px;
   background: var(--paper);
   color: var(--ink);
@@ -478,7 +530,7 @@ pre.mono .num {
 
 /* ---------- Status bar ---------- */
 .statusbar {
-  margin-top: auto;
+  margin: auto 12px 12px;
   background: var(--paper);
   border: 3px solid var(--outline);
   border-radius: 999px;
@@ -486,7 +538,7 @@ pre.mono .num {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
   color: var(--ink);
 }
@@ -589,20 +641,20 @@ pre.mono .num {
   stroke-width: 2;
 }
 
-.grid {
+svg .grid {
   stroke: var(--menu);
   stroke-width: 1;
 }
 
 .tick-label {
   fill: var(--ink);
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 13px;
 }
 
 .axis-title {
   fill: var(--ink-soft);
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
 }
 
@@ -634,7 +686,7 @@ pre.mono .num {
 .summary-table {
   width: 100%;
   border-collapse: collapse;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 16px;
 }
 
@@ -653,6 +705,7 @@ pre.mono .num {
 
 .summary-table td {
   background: var(--paper);
+  color: var(--hilite);
   text-align: right;
 }
 
@@ -679,15 +732,20 @@ pre.mono .num {
   width: 130px;
   padding: 6px 8px;
   font-size: 16px;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   background: var(--paper);
   color: var(--ink);
   border: 3px solid var(--outline);
   border-radius: 0;
 }
 
+.export-actions {
+  flex-basis: 100%;
+  margin-top: 4px;
+}
+
 .predict-answer {
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 20px;
   color: var(--hilite);
   margin: 10px 0 0;
@@ -699,10 +757,11 @@ pre.mono .num {
   color: var(--ink);
 }
 
-.select-decimals {
+.select-decimals,
+.select-sheet {
   padding: 4px 8px;
   font-size: 13px;
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   background: var(--paper);
   color: var(--ink);
   border: 3px solid var(--outline);
@@ -747,8 +806,107 @@ pre.mono .num {
 
 .hist-label {
   fill: var(--ink);
-  font-family: "VT323", "DotGothic16", monospace;
+  font-family: var(--font-num);
   font-size: 12px;
+}
+
+/* ---------- Grid columns ---------- */
+.col-num {
+  width: 44px;
+  text-align: center;
+  color: var(--ink-soft);
+}
+
+.col-actions {
+  width: 64px;
+  text-align: center;
+}
+
+.upload-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ---------- Preprocess: relation, sheet picker, attribute stats ---------- */
+.relation-panel,
+.selected-attribute-panel {
+  background: var(--menu);
+  border: 3px solid var(--outline);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.relation-title {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--hilite);
+  margin-bottom: 8px;
+}
+
+.relation-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  font-size: 14px;
+}
+
+.relation-item {
+  overflow-wrap: anywhere;
+}
+
+.relation-val {
+  font-family: var(--font-num);
+  font-size: 16px;
+}
+
+.relation-val.num,
+.stat-val.num {
+  color: var(--hilite);
+}
+
+.sheet-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sheet-label {
+  font-size: 13px;
+}
+
+.attr-form {
+  margin: 0;
+}
+
+.attr-stats-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-num);
+  font-size: 16px;
+}
+
+.attr-stats-table td {
+  border: 2px solid var(--outline);
+  padding: 4px 10px;
+  background: var(--paper);
+}
+
+.attr-stats-table .stat-label {
+  background: var(--menu);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.attr-row-active td {
+  background: #FFE6EA;
+}
+
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: var(--title);
 }
 
 /* ---------- Scrollbars ---------- */
@@ -768,11 +926,27 @@ pre.mono .num {
 
 /* ---------- Focus visibility ---------- */
 input[type="text"]:focus-visible,
+select:focus-visible,
 button:focus-visible,
 input[type="submit"]:focus-visible,
 .tab-label:focus-visible {
   outline: 3px solid var(--cyan);
   outline-offset: 0;
+}
+
+#tab-data:focus-visible ~ .tabs label[for="tab-data"],
+#tab-preprocess:focus-visible ~ .tabs label[for="tab-preprocess"],
+#tab-calculation:focus-visible ~ .tabs label[for="tab-calculation"],
+#tab-result:focus-visible ~ .tabs label[for="tab-result"] {
+  outline: 3px solid var(--cyan);
+  outline-offset: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
 }
 
 /* ---------- Responsive ---------- */
@@ -785,5 +959,48 @@ input[type="submit"]:focus-visible,
 
   .tabs {
     flex-wrap: wrap;
+    padding: 8px 8px 0;
+  }
+
+  .tab-panels {
+    padding: 8px;
+  }
+
+  .panel-body {
+    padding: 10px;
+  }
+
+  .titlebar {
+    padding: 6px 8px;
+  }
+
+  .title-text {
+    font-size: 18px;
+  }
+
+  .menubar {
+    gap: 10px;
+    padding: 6px 8px;
+  }
+
+  .tool-credit {
+    display: none;
+  }
+
+  .input-file {
+    max-width: 100%;
+  }
+
+  .predict-input {
+    width: 100%;
+  }
+
+  .equation {
+    font-size: 22px;
+    overflow-wrap: anywhere;
+  }
+
+  .formula p {
+    overflow-wrap: anywhere;
   }
 }
