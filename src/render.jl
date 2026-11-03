@@ -474,8 +474,8 @@ function render_page(
   <span class="menu-item">Help</span>
 </div>
 <header class="app-header">
-  <h1>Simple Linear Regression Calculator</h1>
-  <p class="tagline">Weka-style &middot; b = SLOPE &middot; a = INTERCEPT &middot; r = CORREL &middot; R&#x00B2; = RSQ &middot; &#x0177; = FORECAST.LINEAR</p>
+  <h1>Julia Simple Linear Regression Calculator</h1>
+  <p class="tagline">By Group 3 BSIT 3-1 &middot; b = SLOPE &middot; a = INTERCEPT &middot; r = CORREL &middot; R&#x00B2; = RSQ &middot; &#x0177; = FORECAST.LINEAR</p>
 </header>
 
 <input type="radio" name="tab" id="tab-data" value="data"$(checked_data)>
@@ -502,7 +502,7 @@ $(result_panel)
   <span class="tool-btn">&#x1F5BC;</span>
   <span class="tool-btn">&#x2665;</span>
   <span class="tool-btn">&#x2605;</span>
-  <span class="tool-credit">Simple Linear Regression Calculator</span>
+  <span class="tool-credit">Dela Cruz, Villanueva, Santiago</span>
 </div>
 
 $(status_bar_html)
