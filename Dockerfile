@@ -7,7 +7,8 @@ FROM julia:1.13.3-bookworm
 # so the app runs single-threaded.
 ENV JULIA_DEPOT_PATH=/opt/julia-depot \
     JULIA_NUM_THREADS=1 \
-    JULIA_PKG_PRECOMPILE_AUTO=0
+    JULIA_PKG_PRECOMPILE_AUTO=0 \
+    JULIA_CPU_TARGET="generic;sandybridge,-xsaveopt,clone_all;haswell,-rdrnd,base(1)"
 
 WORKDIR /app
 
@@ -26,4 +27,4 @@ ENV HOST=0.0.0.0 \
     PORT=10000
 EXPOSE 10000
 
-CMD ["julia", "--project=.", "src/main.jl"]
+CMD ["julia", "--project=.", "--heap-size-hint=256M", "-O0", "--compile=min", "src/main.jl"]
