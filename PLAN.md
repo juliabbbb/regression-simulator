@@ -64,16 +64,22 @@ slr-calculator/
 ├── Project.toml
 ├── README.md
 ├── PLAN.md
+├── PREPROCESSING.md
 ├── src/
 │   ├── main.jl          # server start + routes
 │   ├── regression.jl    # handwritten formulas (DONE)
-│   ├── importer.jl      # CSV / XLSX → vectors
-│   ├── render.jl        # HTML builders: grid, table, formulas, SVG chart, results
-│   └── export.jl        # download results as CSV
+│   ├── importer.jl      # CSV / XLSX → vectors (DONE)
+│   ├── preprocess.jl    # 13-step data cleaning & preprocessing pipeline (DONE)
+│   ├── render.jl        # HTML builders: grid, table, formulas, SVG chart, results (DONE)
+│   ├── chart.jl         # pure-Julia SVG chart & histogram (DONE)
+│   └── export.jl        # CSV downloads: results & clean dataset (DONE)
 ├── static/
-│   └── style.css        # built from the design md
+│   └── style.css        # Pixel Pink Retro Window theme (DONE)
 └── test/
-    └── excel_match.jl   # compares against hand-computed / Excel values (DONE)
+    ├── excel_match.jl   # Excel verification tests (DONE)
+    ├── phase3_test.jl   # upload store, caps, end-to-end selection (DONE)
+    ├── chart_test.jl    # pure-Julia SVG scatter & histogram tests (DONE)
+    └── preprocess_test.jl # 13-step cleaning pipeline & edge case tests (DONE)
 ```
 
 ### Routes
@@ -84,7 +90,9 @@ slr-calculator/
 | `POST /calculate` | Read the grid, run regression, render results |
 | `POST /rows` | Add or remove rows (re-renders the grid) |
 | `POST /upload` | Multipart upload of `.csv` / `.xlsx`, then show column pickers |
-| `POST /select` | Apply the chosen sheet and X / Y columns to the grid |
+| `POST /select` | Apply the chosen sheet and cleaned X / Y columns to the grid |
+| `POST /preprocess` | Re-run cleaning with updated options (missing strategy, duplicates, outliers, transform) |
+| `POST /export_clean` | Download cleaned dataset as CSV |
 | `POST /predict` | Predict Ŷ for a new X |
 | `GET /static/style.css` | Serve the stylesheet |
 | `POST /export` | Download the calculation table and results as CSV |
@@ -176,8 +184,9 @@ The formula lines and the SVG are built from the **actual computed values**, so 
 | 2 | Server, manual grid, calculation table, a / b formula steps | Done |
 | 3 | CSV / XLSX import with sheet and column pickers | Done (run `julia --project test/phase3_test.jl` to confirm locally) |
 | 4 | SVG chart + Weka-style summary panel + Predict box | Done (plus attribute histogram and display decimals) |
-| 5 | Apply the design md to `style.css` | |
-| 6 | CSV export, README, GitHub-ready cleanup | |
+| 5 | Apply the design md to `style.css` | Done (Pixel Pink Retro Window theme) |
+| 6 | CSV export, README, GitHub-ready cleanup | Done (`export.jl`, `render.yaml`, `Dockerfile`) |
+| 7 | Preprocessing & Cleaning Tab (13-step Weka-style pipeline, dirty sample, export_clean) | Done (run `julia --project test/preprocess_test.jl` to confirm locally) |
 
 ---
 
@@ -202,5 +211,4 @@ The formula lines and the SVG are built from the **actual computed values**, so 
 
 ## 11. Open Items
 
-- Design md (to be provided by the user).
 - Optional later: p-value and confidence intervals (would need Distributions.jl), multiple regression, residual plot tab.

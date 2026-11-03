@@ -1,7 +1,7 @@
 """
-CSV download for POST /export.
-Builds a file from the same SLRResult the page renders, so the download always
-matches the table on screen. Display formatting is not applied: full Float64
+CSV download for POST /export and POST /export_clean.
+Builds a file from the same SLRResult or cleaned vectors, so the download always
+matches what is shown on screen. Display formatting is not applied: full Float64
 values are written.
 """
 
@@ -26,4 +26,15 @@ function csv_response(result)::HTTP.Response
     return HTTP.Response(200; body = take!(t),
         headers = ["Content-Type" => "text/csv; charset=utf-8",
                    "Content-Disposition" => "attachment; filename=\"regression.csv\""])
+end
+
+function csv_clean_response(clean_x::Vector{Float64}, clean_y::Vector{Float64})::HTTP.Response
+    t = IOBuffer()
+    print(t, "X,Y\r\n")
+    for i in 1:length(clean_x)
+        print(t, csv_num(clean_x[i]), ",", csv_num(clean_y[i]), "\r\n")
+    end
+    return HTTP.Response(200; body = take!(t),
+        headers = ["Content-Type" => "text/csv; charset=utf-8",
+                   "Content-Disposition" => "attachment; filename=\"clean_data.csv\""])
 end

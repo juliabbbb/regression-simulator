@@ -65,7 +65,7 @@ function render_grid_panel(rows; token::String = "", decimals::Int = 4)::String
           <td class="col-num">$(i)</td>
           <td class="col-x"><input type="text" name="x_$(i)" id="x_$(i)" value="$(html_escape(row[1]))" placeholder="X" autocomplete="off" /></td>
           <td class="col-y"><input type="text" name="y_$(i)" id="y_$(i)" value="$(html_escape(row[2]))" placeholder="Y" autocomplete="off" /></td>
-          <td class="col-actions"><input type="submit" name="rm_$(i)" value="$(i)" class="btn-remove" title="Remove row $(i)" /></td>
+          <td class="col-actions"><input type="submit" name="rm_$(i)" value="&times;" class="btn-remove" title="Remove row $(i)" aria-label="Remove row $(i)" /></td>
         </tr>
 """
         print(t, row_html)
@@ -112,7 +112,7 @@ function render_calculation_panel(result; decimals::Int = 4)::String
     print(t, "    <h2>Calculation</h2>\n")
     print(t, "  </div>\n")
     print(t, "  <div class=\"panel-body\">\n")
-    print(t, "    <p class=\"panel-note\">n = ", result.n, " &middot; x&#x0304; = ", f(result.xbar), " &middot; &#x0233; = ", f(result.ybar), "</p>\n")
+    print(t, "    <p class=\"panel-note\">n = ", result.n, " &middot; Average (Mean) x&#x0304; = ", f(result.xbar), " &middot; Average (Mean) &#x0233; = ", f(result.ybar), "</p>\n")
     print(t, "    <table class=\"calc-table\">\n")
     print(t, "      <thead>\n")
     print(t, "        <tr>\n")
@@ -122,41 +122,55 @@ function render_calculation_panel(result; decimals::Int = 4)::String
     print(t, "          <th>y &#x2212; &#x0233;</th>\n")
     print(t, "          <th>(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;)</th>\n")
     print(t, "          <th>(x &#x2212; x&#x0304;)&#x00B2;</th>\n")
-    print(t, "          <th>&#x0176;</th>\n")
+    print(t, "          <th>Predicted Y (&#x0177;)</th>\n")
     print(t, "        </tr>\n")
     print(t, "      </thead>\n")
     print(t, "      <tbody>\n")
-    for i in eachindex(result.x)
+    for i in 1:result.n
         print(t, "        <tr>\n")
-        print(t, "          <td>", f(result.x[i]), "</td>\n")
-        print(t, "          <td>", f(result.y[i]), "</td>\n")
-        print(t, "          <td>", f(result.dx[i]), "</td>\n")
-        print(t, "          <td>", f(result.dy[i]), "</td>\n")
-        print(t, "          <td>", f(result.dxdy[i]), "</td>\n")
-        print(t, "          <td>", f(result.dx2[i]), "</td>\n")
-        print(t, "          <td>", f(result.yhat[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.x[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.y[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.dx[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.dy[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.dxdy[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.dx2[i]), "</td>\n")
+        print(t, "          <td class=\"num\">", f(result.yhat[i]), "</td>\n")
         print(t, "        </tr>\n")
     end
-    print(t, "      </tbody>\n")
-    print(t, "      <tfoot>\n")
-    print(t, "        <tr>\n")
-    print(t, "          <td>&#x03A3;X = ", f(sum(result.x)), "</td>\n")
-    print(t, "          <td>&#x03A3;Y = ", f(sum(result.y)), "</td>\n")
-    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;) = ", f(sum(result.dx)), "</td>\n")
-    print(t, "          <td>&#x03A3;(y &#x2212; &#x0233;) = ", f(sum(result.dy)), "</td>\n")
-    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) = ", f(result.sxy), "</td>\n")
-    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = ", f(result.sxx), "</td>\n")
-    print(t, "          <td>&#x03A3;Predicted Y = ", f(sum(result.yhat)), "</td>\n")
+    print(t, "        <tr class=\"total-row\">\n")
+    print(t, "          <td class=\"num\"><strong>Sum (&#x03A3;) = ", f(sum(result.x)), "</strong></td>\n")
+    print(t, "          <td class=\"num\"><strong>Sum (&#x03A3;) = ", f(sum(result.y)), "</strong></td>\n")
+    print(t, "          <td class=\"num\">Sum (&#x03A3;) = 0</td>\n")
+    print(t, "          <td class=\"num\">Sum (&#x03A3;) = 0</td>\n")
+    print(t, "          <td class=\"num\"><strong>Sum (&#x03A3;) = ", f(result.sxy), "</strong></td>\n")
+    print(t, "          <td class=\"num\"><strong>Sum (&#x03A3;) = ", f(result.sxx), "</strong></td>\n")
+    print(t, "          <td class=\"num\">&mdash;</td>\n")
     print(t, "        </tr>\n")
-    print(t, "      </tfoot>\n")
+    print(t, "        <tr class=\"total-row average-row\">\n")
+    print(t, "          <td class=\"num\"><strong>Average (x&#x0304;) = ", f(result.xbar), "</strong></td>\n")
+    print(t, "          <td class=\"num\"><strong>Average (&#x0233;) = ", f(result.ybar), "</strong></td>\n")
+    print(t, "          <td class=\"num\">Average = 0</td>\n")
+    print(t, "          <td class=\"num\">Average = 0</td>\n")
+    print(t, "          <td class=\"num\">&mdash;</td>\n")
+    print(t, "          <td class=\"num\">&mdash;</td>\n")
+    print(t, "          <td class=\"num\">&mdash;</td>\n")
+    print(t, "        </tr>\n")
+    print(t, "      </tbody>\n")
     print(t, "    </table>\n")
-    line_b = "b = &#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = " * f(result.sxy) * " / " * f(result.sxx) * " = " * f(result.b)
-    line_a = "a = &#x0233; &#x2212; b&#183;x&#x0304; = " * f(result.ybar) * " &#x2212; (" * f(result.b) * ")(" * f(result.xbar) * ") = " * f(result.a)
-    line_eq = "&#x0177; = " * f(result.a) * " + " * f(result.b) * "x"
-    print(t, "    <div class=\"formula\">\n")
-    print(t, "      <p><code>", line_b, "</code></p>\n")
-    print(t, "      <p><code>", line_a, "</code></p>\n")
-    print(t, "      <p class=\"equation\">", line_eq, "</p>\n")
+
+    b_num = f(result.sxy)
+    b_den = f(result.sxx)
+    b_val = f(result.b)
+    a_val = f(result.a)
+    ybar_str = f(result.ybar)
+    xbar_str = f(result.xbar)
+    equation = "&#x0177; = " * a_val * " + " * b_val * "x"
+
+    print(t, "    <div class=\"formula-block\">\n")
+    print(t, "      <div class=\"formula-title\">Formulas &amp; Equation</div>\n")
+    print(t, "      <div class=\"formula-line\">b = &#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = ", b_num, " / ", b_den, " = <strong>", b_val, "</strong></div>\n")
+    print(t, "      <div class=\"formula-line\">a = &#x0233; &#x2212; b &middot; x&#x0304; = ", ybar_str, " &#x2212; (", b_val, " &middot; ", xbar_str, ") = <strong>", a_val, "</strong></div>\n")
+    print(t, "      <div class=\"equation\">", equation, "</div>\n")
     print(t, "    </div>\n")
     print(t, "    ", render_chart(result), "\n")
     print(t, "  </div>\n")
@@ -178,6 +192,7 @@ function render_result_panel(
     predict_x::String = "",
     token::String = "",
     rows = Tuple{String,String}[],
+    transform::Symbol = :none,
 )::String
     t = IOBuffer()
     print(t, "<section class=\"tab-panel\" id=\"panel-result\" role=\"tabpanel\">\n")
@@ -187,6 +202,14 @@ function render_result_panel(
     print(t, "  <div class=\"panel-body\">\n")
     if error !== nothing
         print(t, "    <p class=\"error-text\">", html_escape(error), "</p>\n")
+    end
+    if transform != :none
+        trans_label = transform == :normalize ? "Normalize (0–1)" :
+                      transform == :standardize ? "Standardize (z-score)" :
+                      transform == :log ? "Log (ln)" : string(transform)
+        print(t, "    <div class=\"panel-note transform-note\">\n")
+        print(t, "      Notice: A <strong>", html_escape(trans_label), "</strong> transformation is active. The regression equation, error metrics, and predictions are in transformed units.\n")
+        print(t, "    </div>\n")
     end
     if result !== nothing
         equation = "&#x0177; = " * fmt(result.a, decimals) * " + " * fmt(result.b, decimals) * "x"
@@ -210,6 +233,7 @@ function render_result_panel(
         print(t, "    <form method=\"post\" action=\"/predict\" class=\"predict-form\">\n")
         print(t, "      <input type=\"hidden\" name=\"token\" value=\"", html_escape(token), "\" />\n")
         print(t, "      <input type=\"hidden\" name=\"decimals\" value=\"", decimals, "\" />\n")
+        print(t, "      <input type=\"hidden\" name=\"transform\" value=\"", string(transform), "\" />\n")
         for (i, row) in enumerate(rows)
             print(t, "      <input type=\"hidden\" name=\"x_", i, "\" value=\"", html_escape(row[1]), "\" />\n")
             print(t, "      <input type=\"hidden\" name=\"y_", i, "\" value=\"", html_escape(row[2]), "\" />\n")
@@ -217,7 +241,7 @@ function render_result_panel(
         print(t, "      <label for=\"predict-x\" class=\"predict-label\">Predict Y for X:</label>\n")
         print(t, "      <input type=\"text\" id=\"predict-x\" name=\"predict_x\" class=\"predict-input\" value=\"", html_escape(predict_x), "\" autocomplete=\"off\" />\n")
         print(t, "      <input type=\"submit\" value=\"Predict\" class=\"btn btn-add\" />\n")
-         print(t, "      <div class=\"export-actions\"><button type=\"submit\" formaction=\"/export\" class=\"btn btn-secondary\">Download CSV</button></div>\n")
+        print(t, "      <div class=\"export-actions\"><button type=\"submit\" formaction=\"/export\" class=\"btn btn-secondary\">Download CSV</button></div>\n")
         print(t, "    </form>\n")
         if predicted !== nothing
             print(t, "    <p class=\"predict-answer\">&#x0177; = <strong>", fmt(predicted, decimals), "</strong></p>\n")
@@ -247,7 +271,7 @@ function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = 
     <h2>Preprocess</h2>
   </div>
   <div class="panel-body">
-    <p class="panel-intro">Upload a .csv or .xlsx file, pick X and Y attributes, then apply to the grid.</p>
+    <p class="panel-intro">Upload a .csv or .xlsx file, inspect data problems, clean with Weka-style pipeline, and apply to the grid.</p>
     <form method="post" action="/upload" enctype="multipart/form-data" class="upload-form">
       <input type="hidden" name="token" value="$(html_escape(tok))" />
       <input type="hidden" name="decimals" value="$(decimals)" />
@@ -277,7 +301,7 @@ function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = 
     end
 
     if u === nothing
-        print(t, """    <div class="panel-note">No file loaded. Upload a .csv or .xlsx file to pick attributes.</div>
+        print(t, """    <div class="panel-note">No file loaded. Upload a .csv or .xlsx file to inspect and clean attributes.</div>
 """)
     else
         rel_name = isempty(u.current_sheet) ? u.filename : (u.filename * " (" * u.current_sheet * ")")
@@ -310,6 +334,37 @@ function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = 
         end
         print(t, "    </div>\n\n")
 
+        # Step 2: Examine structure, variables, data types overview table
+        print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Structure &amp; Attributes Overview</div>
+      <table class="calc-table attr-stats-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th>Attribute</th>
+            <th>Type</th>
+            <th>Missing</th>
+            <th>Distinct</th>
+          </tr>
+        </thead>
+        <tbody>
+""")
+        for i in 1:length(u.columns)
+            st_col = compute_attribute_stats(u.values[i], u.columns[i])
+            print(t, """          <tr>
+            <td class="col-num">$(i)</td>
+            <td><strong>$(html_escape(st_col.name))</strong></td>
+            <td>$(st_col.is_numeric ? "Numeric" : "Nominal")</td>
+            <td class="num">$(st_col.missing_count) ($(round(st_col.missing_pct, digits=1))%)</td>
+            <td class="num">$(st_col.distinct_count)</td>
+          </tr>
+""")
+        end
+        print(t, """        </tbody>
+      </table>
+    </div>\n\n""")
+
+        # Selected attribute stats + histogram
         cur_attr = (1 <= u.selected_attr <= length(u.columns)) ? u.selected_attr : 1
         st = compute_attribute_stats(u.values[cur_attr], u.columns[cur_attr])
         print(t, """    <div class="selected-attribute-panel">
@@ -369,9 +424,13 @@ function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = 
         xname = (1 <= u.x_col <= length(u.columns)) ? html_escape(u.columns[u.x_col]) : "?"
         yname = (1 <= u.y_col <= length(u.columns)) ? html_escape(u.columns[u.y_col]) : "?"
         print(t, "    <div class=\"panel-note\">Selected attribute: X = " * xname * " &middot; Y = " * yname * "</div>\n")
+
+        # Main Preprocessing Form
         print(t, """    <form method="post" action="/select" class="attr-form">
       <input type="hidden" name="token" value="$(html_escape(tok))" />
       <input type="hidden" name="decimals" value="$(decimals)" />
+      
+      <div class="relation-title">Attribute Selection for Regression</div>
       <table class="calc-table attr-table">
         <thead>
           <tr>
@@ -410,10 +469,243 @@ function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = 
       </table>
       <div class="grid-actions attr-actions">
         <button type="submit" formaction="/rows" name="action" value="show" class="btn btn-secondary">Show Selection</button>
-        <button type="submit" name="action" value="apply" class="btn btn-add">Apply to grid</button>
       </div>
-    </form>
 """)
+
+        # Section 4: Cleaning Options
+        m_global  = (u.missing_strategy in (:mean, :global)) ? " selected" : ""
+        m_rolling = (u.missing_strategy in (:rolling, :sequential)) ? " selected" : ""
+        m_drop    = (u.missing_strategy in (:drop, :remove)) ? " selected" : ""
+        d_rem     = u.remove_duplicates ? " selected" : ""
+        d_keep    = !u.remove_duplicates ? " selected" : ""
+        o_flag    = u.outliers_strategy == :flag ? " selected" : ""
+        o_rem     = u.outliers_strategy == :remove ? " selected" : ""
+        t_none    = u.transform == :none ? " selected" : ""
+        t_norm    = u.transform == :normalize ? " selected" : ""
+        t_std     = u.transform == :standardize ? " selected" : ""
+        t_log     = u.transform == :log ? " selected" : ""
+
+        print(t, """    <div class="preprocess-section options-panel">
+      <div class="relation-title">Cleaning &amp; Preprocessing Options</div>
+      <div class="options-grid">
+        <div class="option-field">
+          <label for="missing_strategy">Missing values:</label>
+          <select name="missing_strategy" id="missing_strategy" class="select-option">
+            <option value="global"$(m_global)>Global Average (Recommended for independent records)</option>
+            <option value="rolling"$(m_rolling)>Rolling / Sequential (Recommended for time-series / ordered)</option>
+            <option value="drop"$(m_drop)>Drop rows with missing</option>
+          </select>
+        </div>
+        <div class="option-field">
+          <label for="remove_duplicates">Duplicate records:</label>
+          <select name="remove_duplicates" id="remove_duplicates" class="select-option">
+            <option value="1"$(d_rem)>Remove duplicates (default)</option>
+            <option value="0"$(d_keep)>Keep duplicates</option>
+          </select>
+        </div>
+        <div class="option-field">
+          <label for="outliers_strategy">Outlier handling (IQR rule):</label>
+          <select name="outliers_strategy" id="outliers_strategy" class="select-option">
+            <option value="flag"$(o_flag)>Flag only, do not delete (default)</option>
+            <option value="remove"$(o_rem)>Remove flagged rows</option>
+          </select>
+        </div>
+        <div class="option-field">
+          <label for="transform">Transformation:</label>
+          <select name="transform" id="transform" class="select-option">
+            <option value="none"$(t_none)>None (default)</option>
+            <option value="normalize"$(t_norm)>Normalize (0–1)</option>
+            <option value="standardize"$(t_std)>Standardize (z-score)</option>
+            <option value="log"$(t_log)>Log (ln)</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid-actions preprocess-actions">
+        <button type="submit" formaction="/preprocess" class="btn btn-secondary">Update Cleaning Options</button>
+        <button type="submit" name="action" value="apply" class="btn btn-add">Apply to grid</button>
+        <button type="submit" formaction="/export_clean" class="btn btn-secondary">Download clean CSV</button>
+      </div>
+    </div>
+""")
+
+        if u.report !== nothing
+            rep = u.report
+
+            # Section 3: Issues found
+            print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Issues Found</div>
+      <div class="issues-grid">
+        <div class="issue-card">
+          <span class="issue-label">Missing Values (X / Y)</span>
+          <span class="issue-val num">$(rep.missing_x) / $(rep.missing_y)</span>
+        </div>
+        <div class="issue-card">
+          <span class="issue-label">Duplicate Rows</span>
+          <span class="issue-val num">$(rep.duplicates_removed)</span>
+        </div>
+        <div class="issue-card">
+          <span class="issue-label">Invalid Non-Numeric</span>
+          <span class="issue-val num">$(rep.invalid_entries)</span>
+        </div>
+        <div class="issue-card">
+          <span class="issue-label">Potential Outliers (X / Y)</span>
+          <span class="issue-val num">$(length(rep.outliers_x)) / $(length(rep.outliers_y))</span>
+        </div>
+      </div>
+    </div>\n\n""")
+
+            # Section 4: Actions applied
+            print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Actions Applied</div>
+""")
+            if isempty(rep.reasons)
+                print(t, "      <p class=\"panel-intro\">No cleaning actions were necessary; dataset is clean.</p>\n")
+            else
+                print(t, "      <ul class=\"actions-list\">\n")
+                for r in rep.reasons
+                    print(t, "        <li>", html_escape(r), "</li>\n")
+                end
+                print(t, "      </ul>\n")
+            end
+            print(t, "    </div>\n\n")
+
+            # Section 5: Before / After summary table
+            outlier_act = u.outliers_strategy == :remove ? "Removed" : "Flagged, kept"
+            missing_act = if u.missing_strategy in (:rolling, :sequential)
+                "Rolling / Sequential interpolation"
+            elseif u.missing_strategy in (:mean, :global)
+                "Global Average (Column Mean)"
+            else
+                "Dropped"
+            end
+            dup_act = u.remove_duplicates ? "Removed" : "Kept"
+            inv_act = rep.invalid_entries > 0 ? "Set to missing, then imputed" : "None"
+            print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Before / After Summary</div>
+      <table class="calc-table before-after-table">
+        <thead>
+          <tr>
+            <th>Check</th>
+            <th>Before</th>
+            <th>Action</th>
+            <th>After</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Rows</td>
+            <td class="num">$(rep.rows_before)</td>
+            <td>$(rep.rows_before > rep.rows_after ? "Removed $(rep.rows_before - rep.rows_after) row(s)" : "All rows retained")</td>
+            <td class="num">$(rep.rows_after)</td>
+          </tr>
+          <tr>
+            <td>Missing values (X / Y)</td>
+            <td class="num">$(rep.missing_x) / $(rep.missing_y)</td>
+            <td>$(missing_act)</td>
+            <td class="num">0 / 0</td>
+          </tr>
+          <tr>
+            <td>Duplicate rows</td>
+            <td class="num">$(rep.duplicates_removed)</td>
+            <td>$(dup_act)</td>
+            <td class="num">0</td>
+          </tr>
+          <tr>
+            <td>Invalid entries</td>
+            <td class="num">$(rep.invalid_entries)</td>
+            <td>$(inv_act)</td>
+            <td class="num">0</td>
+          </tr>
+          <tr>
+            <td>Potential outliers (X / Y)</td>
+            <td class="num">$(length(rep.outliers_x)) / $(length(rep.outliers_y))</td>
+            <td>$(outlier_act)</td>
+            <td class="num">$(length(rep.outliers_x)) / $(length(rep.outliers_y))</td>
+          </tr>
+          <tr>
+            <td>Transform</td>
+            <td>&mdash;</td>
+            <td>$(string(rep.transform))</td>
+            <td>&mdash;</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>\n\n""")
+
+            # Section 6: Cleaned data preview
+            n_prev = min(10, length(u.clean_x))
+            print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Cleaned Data Preview (first $(n_prev) of $(length(u.clean_x)) instances)</div>
+      <table class="calc-table preview-table">
+        <thead>
+          <tr>
+            <th style="width: 40px;">#</th>
+            <th>Clean X</th>
+            <th>Clean Y</th>
+            <th>Status / Flags</th>
+          </tr>
+        </thead>
+        <tbody>
+""")
+            is_rolling = rep.missing_strategy in (:rolling, :sequential)
+            imp_x_text = is_rolling ? "X IMPUTED (Rolling)" : "X IMPUTED (Global)"
+            imp_y_text = is_rolling ? "Y IMPUTED (Rolling)" : "Y IMPUTED (Global)"
+
+            for i in 1:n_prev
+                flags = String[]
+                is_x_imp = (i, :x) in rep.imputed_cells
+                is_y_imp = (i, :y) in rep.imputed_cells
+                is_out = i in rep.outlier_rows
+
+                is_x_imp && push!(flags, "<span class=\"badge-tag badge-imputed\">$(imp_x_text)</span>")
+                is_y_imp && push!(flags, "<span class=\"badge-tag badge-imputed\">$(imp_y_text)</span>")
+                is_out && push!(flags, "<span class=\"badge-tag badge-outlier\">outlier</span>")
+                isempty(flags) && push!(flags, "<span class=\"badge-tag badge-clean\">clean</span>")
+
+                cls_x = is_x_imp ? "cell-imputed" : ""
+                cls_y = is_y_imp ? "cell-imputed" : ""
+                cls_row = is_out ? "row-outlier" : ""
+
+                print(t, """          <tr class="$(cls_row)">
+            <td class="col-num">$(i)</td>
+            <td class="num $(cls_x)">$(fmt(u.clean_x[i], decimals))</td>
+            <td class="num $(cls_y)">$(fmt(u.clean_y[i], decimals))</td>
+            <td>$(join(flags, " "))</td>
+          </tr>
+""")
+            end
+            print(t, """        </tbody>
+      </table>
+    </div>\n\n""")
+
+            # Section 7: Validation
+            print(t, """    <div class="preprocess-section">
+      <div class="relation-title">Validation Checks (Step 12)</div>
+      <table class="calc-table validation-table">
+        <thead>
+          <tr>
+            <th style="width: 80px;">Status</th>
+            <th>Check</th>
+            <th>Detail</th>
+          </tr>
+        </thead>
+        <tbody>
+""")
+            for c in rep.validation
+                badge = c.passed ? "<span class=\"badge-tag badge-pass\">PASS</span>" : "<span class=\"badge-tag badge-fail\">FAIL</span>"
+                print(t, """          <tr>
+            <td style="text-align: center;">$(badge)</td>
+            <td><strong>$(html_escape(c.name))</strong></td>
+            <td>$(html_escape(c.detail))</td>
+          </tr>
+""")
+            end
+            print(t, """        </tbody>
+      </table>
+    </div>\n\n""")
+        end
+
+        print(t, """    </form>\n""")
     end
     print(t, """  </div>
 </section>
@@ -434,11 +726,13 @@ function render_page(
     decimals::Int = 4,
     predicted = nothing,
     predict_x::String = "",
+    transform::Symbol = :none,
 )::String
     grid_panel = render_grid_panel(rows; token = token, decimals = decimals)
     calc_panel = render_calculation_panel(result; decimals = decimals)
     result_panel = render_result_panel(result, error; decimals = decimals, predicted = predicted,
-                                       predict_x = predict_x, token = token, rows = rows)
+                                       predict_x = predict_x, token = token, rows = rows,
+                                       transform = transform)
     preprocess_panel = render_preprocess_panel(upload, token; error = preprocess_error,
                                                skipped = skipped_count, decimals = decimals)
 

@@ -3,9 +3,12 @@ using UUIDs
 
 include(joinpath(@__DIR__, "regression.jl"))
 include(joinpath(@__DIR__, "importer.jl"))
+include(joinpath(@__DIR__, "preprocess.jl"))
 include(joinpath(@__DIR__, "render.jl"))
 include(joinpath(@__DIR__, "chart.jl"))
 include(joinpath(@__DIR__, "export.jl"))
+
+using .Preprocessing
 
 const SAMPLE_ROWS = Tuple{String,String}[
     ("1", "2"),
@@ -123,6 +126,13 @@ struct UploadData
     current_sheet::String
     selected_attr::Int
     skipped_count::Int
+    clean_x::Vector{Float64}
+    clean_y::Vector{Float64}
+    report::Any
+    missing_strategy::Symbol
+    remove_duplicates::Bool
+    outliers_strategy::Symbol
+    transform::Symbol
 end
 
 """
@@ -143,10 +153,18 @@ function UploadData(;
     current_sheet::String = "",
     selected_attr::Int = 1,
     skipped_count::Int = 0,
+    clean_x::Vector{Float64} = Float64[],
+    clean_y::Vector{Float64} = Float64[],
+    report::Any = nothing,
+    missing_strategy::Symbol = :mean,
+    remove_duplicates::Bool = true,
+    outliers_strategy::Symbol = :flag,
+    transform::Symbol = :none,
 )
     return UploadData(columns, values, first_row_header, timestamp, x_col, y_col,
                       rows, filename, raw_bytes, sheet_names, current_sheet,
-                      selected_attr, skipped_count)
+                      selected_attr, skipped_count, clean_x, clean_y, report,
+                      missing_strategy, remove_duplicates, outliers_strategy, transform)
 end
 
 const UPLOADS = Dict{String, UploadData}()
@@ -168,6 +186,22 @@ end
 
 function make_token()::String
     return "tok_" * lowercase(string(uuid4()))
+end
+
+"""
+Format a Float64 cleanly for manual grid display:
+1.0 -> "1", 4.2 -> "4.2", 0.0 -> "0".
+"""
+function _fmt_clean(v::Float64)::String
+    if isfinite(v) && isinteger(v) && abs(v) < 1e15
+        return string(round(Int64, v))
+    end
+    s = string(round(v, digits=8))
+    if occursin('.', s)
+        s = rstrip(s, '0')
+        endswith(s, '.') && (s = s[1:end-1])
+    end
+    return isempty(s) ? "0" : s
 end
 
 """
@@ -207,6 +241,13 @@ function store_upload(
     current_sheet::String = "",
     selected_attr::Int = 1,
     skipped_count::Int = 0,
+    clean_x::Vector{Float64} = Float64[],
+    clean_y::Vector{Float64} = Float64[],
+    report::Any = nothing,
+    missing_strategy::Symbol = :mean,
+    remove_duplicates::Bool = true,
+    outliers_strategy::Symbol = :flag,
+    transform::Symbol = :none,
 )::String
     return save_upload(tok, UploadData(
         columns = columns,
@@ -222,6 +263,13 @@ function store_upload(
         current_sheet = current_sheet,
         selected_attr = selected_attr,
         skipped_count = skipped_count,
+        clean_x = clean_x,
+        clean_y = clean_y,
+        report = report,
+        missing_strategy = missing_strategy,
+        remove_duplicates = remove_duplicates,
+        outliers_strategy = outliers_strategy,
+        transform = transform,
     ))
 end
 
@@ -241,6 +289,13 @@ function update_upload(
     current_sheet::String = u.current_sheet,
     selected_attr::Int = u.selected_attr,
     skipped_count::Int = u.skipped_count,
+    clean_x::Vector{Float64} = u.clean_x,
+    clean_y::Vector{Float64} = u.clean_y,
+    report::Any = u.report,
+    missing_strategy::Symbol = u.missing_strategy,
+    remove_duplicates::Bool = u.remove_duplicates,
+    outliers_strategy::Symbol = u.outliers_strategy,
+    transform::Symbol = u.transform,
 )::UploadData
     new_u = UploadData(
         columns = columns,
@@ -255,6 +310,13 @@ function update_upload(
         current_sheet = current_sheet,
         selected_attr = selected_attr,
         skipped_count = skipped_count,
+        clean_x = clean_x,
+        clean_y = clean_y,
+        report = report,
+        missing_strategy = missing_strategy,
+        remove_duplicates = remove_duplicates,
+        outliers_strategy = outliers_strategy,
+        transform = transform,
     )
     save_upload(tok, new_u)
     return new_u
@@ -342,22 +404,23 @@ function css_response()::HTTP.Response
     return HTTP.Response(200; body = read(css_path, String), headers = ["Content-Type" => "text/css; charset=utf-8"])
 end
 
-function grid_response(rows; token::String = "", skipped::Int = 0, decimals::Int = DEFAULT_DECIMALS)::HTTP.Response
+function grid_response(rows; token::String = "", skipped::Int = 0, decimals::Int = DEFAULT_DECIMALS, transform::Symbol = :none)::HTTP.Response
     status = if skipped > 0
         string(length(rows)) * " (" * string(skipped) * " skipped for missing values) &middot; press Calculate"
     else
         string(length(rows)) * " &middot; press Calculate"
     end
-    return html_response(render_page(rows, nothing, nothing, status, "data", token; skipped_count = skipped, decimals = decimals))
+    return html_response(render_page(rows, nothing, nothing, status, "data", token; skipped_count = skipped, decimals = decimals, transform = transform))
 end
 
 function results_response(result, err, rows; token::String = "", skipped::Int = 0,
                           decimals::Int = DEFAULT_DECIMALS, predicted = nothing,
-                          predict_x::String = "")::HTTP.Response
+                          predict_x::String = "", transform::Symbol = :none)::HTTP.Response
     if err !== nothing
         return html_response(render_page(rows, result, err, "Error: " * html_escape(err), "result", token;
                                          skipped_count = skipped, decimals = decimals,
-                                         predicted = predicted, predict_x = predict_x))
+                                         predicted = predicted, predict_x = predict_x,
+                                         transform = transform))
     end
     status = if skipped > 0
         "n = " * string(result.n) * " (" * string(skipped) * " skipped for missing values) &middot; b = " * fmt(result.b, decimals) * " &middot; a = " * fmt(result.a, decimals) * " &middot; R² = " * fmt(result.r2, decimals)
@@ -366,7 +429,8 @@ function results_response(result, err, rows; token::String = "", skipped::Int = 
     end
     return html_response(render_page(rows, result, nothing, status, "result", token;
                                      skipped_count = skipped, decimals = decimals,
-                                     predicted = predicted, predict_x = predict_x))
+                                     predicted = predicted, predict_x = predict_x,
+                                     transform = transform))
 end
 
 function handle_rows(qs)::HTTP.Response
@@ -388,6 +452,23 @@ function handle_rows(qs)::HTTP.Response
         end
         new_x = 1
         new_y = min(2, length(new_cols))
+
+        clean_x = Float64[]
+        clean_y = Float64[]
+        rep = nothing
+        if length(new_names) >= 2 && count_rows(new_cols) >= 1
+            try
+                clean_x, clean_y, rep = Preprocessing.preprocess(
+                    new_cols[new_x], new_cols[new_y];
+                    missing_strategy = u.missing_strategy,
+                    remove_duplicates = u.remove_duplicates,
+                    outliers_strategy = u.outliers_strategy,
+                    transform = u.transform
+                )
+            catch
+            end
+        end
+
         new_u = update_upload(
             tok,
             u;
@@ -400,9 +481,12 @@ function handle_rows(qs)::HTTP.Response
             current_sheet = chosen,
             selected_attr = 1,
             skipped_count = 0,
+            clean_x = clean_x,
+            clean_y = clean_y,
+            report = rep,
         )
         status = "Loaded sheet '" * html_escape(chosen) * "' (" * string(count_rows(new_cols)) * " instances, " * string(length(new_names)) * " attributes)"
-        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals, transform = new_u.transform))
     end
 
     if haskey(qs, "attr_show") || action == "show"
@@ -425,15 +509,34 @@ function handle_rows(qs)::HTTP.Response
             ai = tryparse(Int, qs["attr_show"])
             (ai !== nothing && 1 <= ai <= length(u.columns)) && (sel_attr = ai)
         end
-        new_u = update_upload(tok, u; x_col = new_x, y_col = new_y, selected_attr = sel_attr)
+
+        clean_x = Float64[]
+        clean_y = Float64[]
+        rep = nothing
+        if length(u.columns) >= 2 && count_rows(u.values) >= 1
+            try
+                clean_x, clean_y, rep = Preprocessing.preprocess(
+                    u.values[new_x], u.values[new_y];
+                    missing_strategy = u.missing_strategy,
+                    remove_duplicates = u.remove_duplicates,
+                    outliers_strategy = u.outliers_strategy,
+                    transform = u.transform
+                )
+            catch
+            end
+        end
+
+        new_u = update_upload(tok, u; x_col = new_x, y_col = new_y, selected_attr = sel_attr,
+                              clean_x = clean_x, clean_y = clean_y, report = rep)
         status = "Selected attribute: X = " * html_escape(new_u.columns[new_u.x_col]) * " &middot; Y = " * html_escape(new_u.columns[new_u.y_col])
-        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals))
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals, transform = new_u.transform))
     end
 
     # POSTs use exactly the rows that were submitted; SAMPLE_ROWS is only for GET /.
     rows = get_rows(qs)
     # The skipped-row count is server-side state in the upload record, never a form field.
     skipped = u === nothing ? 0 : u.skipped_count
+    transform = u === nothing ? :none : u.transform
 
     # Collect every submitted rm_* key, ignore out-of-range values, and remove
     # only the smallest valid index so the result never depends on Dict order.
@@ -454,19 +557,19 @@ function handle_rows(qs)::HTTP.Response
         if u !== nothing
             update_upload(tok, u; rows = kept)
         end
-        return grid_response(kept; token = tok, skipped = skipped, decimals = decimals)
+        return grid_response(kept; token = tok, skipped = skipped, decimals = decimals, transform = transform)
     elseif action == "add"
         new_rows = copy(rows)
         push!(new_rows, ("", ""))
         if u !== nothing
             update_upload(tok, u; rows = new_rows)
         end
-        return grid_response(new_rows; token = tok, skipped = skipped, decimals = decimals)
+        return grid_response(new_rows; token = tok, skipped = skipped, decimals = decimals, transform = transform)
     elseif action == "calculate"
         result, err = run_regression(rows)
-        return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals)
+        return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals, transform = transform)
     end
-    return grid_response(rows; token = tok, skipped = skipped, decimals = decimals)
+    return grid_response(rows; token = tok, skipped = skipped, decimals = decimals, transform = transform)
 end
 
 function handle_calculate(qs)::HTTP.Response
@@ -477,8 +580,9 @@ function handle_calculate(qs)::HTTP.Response
     rows = get_rows(qs)
     # The skipped-row count is server-side state in the upload record, never a form field.
     skipped = u === nothing ? 0 : u.skipped_count
+    transform = u === nothing ? :none : u.transform
     result, err = run_regression(rows)
-    return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals)
+    return results_response(result, err, rows; token = tok, skipped = skipped, decimals = decimals, transform = transform)
 end
 
 function handle_predict(qs)::HTTP.Response
@@ -487,12 +591,13 @@ function handle_predict(qs)::HTTP.Response
     decimals = read_decimals(qs)
     rows = get_rows(qs)
     skipped = u === nothing ? 0 : u.skipped_count
+    transform = Symbol(get(qs, "transform", u === nothing ? "none" : string(u.transform)))
     predict_x = String(strip(get(qs, "predict_x", "")))
 
     result, err = run_regression(rows)
     if err !== nothing
         return results_response(nothing, err, rows; token = tok, skipped = skipped,
-                                decimals = decimals, predict_x = predict_x)
+                                decimals = decimals, predict_x = predict_x, transform = transform)
     end
 
     xv = tryparse(Float64, predict_x)
@@ -500,14 +605,15 @@ function handle_predict(qs)::HTTP.Response
         msg = isempty(predict_x) ? "Enter a value for X to predict." :
               "Non-numeric value '" * predict_x * "' for the new X."
         return results_response(result, msg, rows; token = tok, skipped = skipped,
-                                decimals = decimals, predict_x = predict_x)
+                                decimals = decimals, predict_x = predict_x, transform = transform)
     end
 
     predicted = result.a + result.b * xv
     status = "ŷ = " * fmt(predicted, decimals) * " for X = " * fmt(xv, decimals)
     return html_response(render_page(rows, result, nothing, status, "result", tok;
                                      skipped_count = skipped, decimals = decimals,
-                                     predicted = predicted, predict_x = predict_x))
+                                     predicted = predicted, predict_x = predict_x,
+                                     transform = transform))
 end
 
 function handle_export(qs)::HTTP.Response
@@ -593,6 +699,23 @@ function handle_upload(req)::HTTP.Response
     tok = make_token()
     x_col = 1
     y_col = min(2, length(cols))
+
+    clean_x = Float64[]
+    clean_y = Float64[]
+    rep = nothing
+    if length(cols) >= 2 && count_rows(cols) >= 1
+        try
+            clean_x, clean_y, rep = Preprocessing.preprocess(
+                cols[x_col], cols[y_col];
+                missing_strategy = :mean,
+                remove_duplicates = true,
+                outliers_strategy = :flag,
+                transform = :none
+            )
+        catch
+        end
+    end
+
     u = UploadData(
         columns = names,
         values = cols,
@@ -606,6 +729,13 @@ function handle_upload(req)::HTTP.Response
         current_sheet = chosen_sheet,
         selected_attr = 1,
         skipped_count = 0,
+        clean_x = clean_x,
+        clean_y = clean_y,
+        report = rep,
+        missing_strategy = :mean,
+        remove_duplicates = true,
+        outliers_strategy = :flag,
+        transform = :none,
     )
     save_upload(tok, u)
 
@@ -649,23 +779,116 @@ function handle_select(qs)::HTTP.Response
         return html_response(render_page(Tuple{String,String}[], nothing, nothing, "Unknown column for X or Y", "preprocess", tok, u; preprocess_error = "Unknown column for X or Y.", decimals = decimals))
     end
 
-    cleaned_rows, skipped = try
-        extract_selected_columns(u.values, u.columns, x_idx, y_idx, u.first_row_header)
+    missing_strat = Symbol(get(qs, "missing_strategy", string(u.missing_strategy)))
+    remove_dups = get(qs, "remove_duplicates", u.remove_duplicates ? "1" : "0") in ("1", "true", "yes")
+    outliers_strat = Symbol(get(qs, "outliers_strategy", string(u.outliers_strategy)))
+    trans = Symbol(get(qs, "transform", string(u.transform)))
+
+    clean_x, clean_y, rep = try
+        Preprocessing.preprocess(
+            u.values[x_idx], u.values[y_idx];
+            missing_strategy = missing_strat,
+            remove_duplicates = remove_dups,
+            outliers_strategy = outliers_strat,
+            transform = trans
+        )
     catch e
-        if e isa NonNumericInputError
+        err_msg = sprint(showerror, e)
+        new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, missing_strategy = missing_strat, remove_duplicates = remove_dups, outliers_strategy = outliers_strat, transform = trans)
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing,
+            html_escape(err_msg), "preprocess", tok, new_u;
+            preprocess_error = err_msg, decimals = decimals, transform = trans))
+    end
+
+    if !rep.all_passed
+        fail_details = [c.name * ": " * c.detail for c in rep.validation if !c.passed]
+        err_msg = "Validation failed: " * join(fail_details, "; ")
+        new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, clean_x = clean_x, clean_y = clean_y, report = rep, missing_strategy = missing_strat, remove_duplicates = remove_dups, outliers_strategy = outliers_strat, transform = trans)
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing,
+            html_escape(err_msg), "preprocess", tok, new_u;
+            preprocess_error = err_msg, decimals = decimals, transform = trans))
+    end
+
+    cleaned_rows = [(_fmt_clean(clean_x[i]), _fmt_clean(clean_y[i])) for i in 1:length(clean_x)]
+    new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, rows = cleaned_rows, clean_x = clean_x, clean_y = clean_y, report = rep, missing_strategy = missing_strat, remove_duplicates = remove_dups, outliers_strategy = outliers_strat, transform = trans)
+
+    status = "Loaded " * string(length(cleaned_rows)) * " rows &middot; press Calculate"
+    return html_response(render_page(cleaned_rows, nothing, nothing, status, "data", tok, new_u; decimals = decimals, transform = trans))
+end
+
+function handle_preprocess(qs)::HTTP.Response
+    tok = get(qs, "token", "")
+    u = valid_token(tok)
+    decimals = read_decimals(qs)
+    if u === nothing
+        msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, msg, "preprocess", ""; preprocess_error = msg, decimals = decimals))
+    end
+
+    x_idx = u.x_col
+    y_idx = u.y_col
+    if haskey(qs, "x_col")
+        xi = tryparse(Int, qs["x_col"])
+        (xi !== nothing && 1 <= xi <= length(u.columns)) && (x_idx = xi)
+    end
+    if haskey(qs, "y_col")
+        yi = tryparse(Int, qs["y_col"])
+        (yi !== nothing && 1 <= yi <= length(u.columns)) && (y_idx = yi)
+    end
+
+    missing_strat = Symbol(get(qs, "missing_strategy", "mean"))
+    remove_dups = get(qs, "remove_duplicates", "1") in ("1", "true", "yes")
+    outliers_strat = Symbol(get(qs, "outliers_strategy", "flag"))
+    trans = Symbol(get(qs, "transform", "none"))
+
+    clean_x, clean_y, rep = try
+        Preprocessing.preprocess(
+            u.values[x_idx], u.values[y_idx];
+            missing_strategy = missing_strat,
+            remove_duplicates = remove_dups,
+            outliers_strategy = outliers_strat,
+            transform = trans
+        )
+    catch e
+        err_msg = sprint(showerror, e)
+        new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, missing_strategy = missing_strat, remove_duplicates = remove_dups, outliers_strategy = outliers_strat, transform = trans)
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing,
+            html_escape(err_msg), "preprocess", tok, new_u;
+            preprocess_error = err_msg, decimals = decimals, transform = trans))
+    end
+
+    new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, clean_x = clean_x, clean_y = clean_y, report = rep, missing_strategy = missing_strat, remove_duplicates = remove_dups, outliers_strategy = outliers_strat, transform = trans)
+    status = "Cleaned data: " * string(rep.rows_after) * " rows &middot; " * (rep.all_passed ? "all checks passed" : "validation warnings")
+    return html_response(render_page(Tuple{String,String}[], nothing, nothing, status, "preprocess", tok, new_u; decimals = decimals, transform = trans))
+end
+
+function handle_export_clean(qs)::HTTP.Response
+    tok = get(qs, "token", "")
+    u = valid_token(tok)
+    decimals = read_decimals(qs)
+    if u === nothing || isempty(u.values)
+        msg = "No cleaned data available to export. Please upload a file and preprocess."
+        return html_response(render_page(Tuple{String,String}[], nothing, nothing, msg, "preprocess", ""; preprocess_error = msg, decimals = decimals))
+    end
+
+    clean_x = u.clean_x
+    clean_y = u.clean_y
+    if isempty(clean_x) || isempty(clean_y)
+        clean_x, clean_y, _ = try
+            Preprocessing.preprocess(
+                u.values[u.x_col], u.values[u.y_col];
+                missing_strategy = u.missing_strategy,
+                remove_duplicates = u.remove_duplicates,
+                outliers_strategy = u.outliers_strategy,
+                transform = u.transform
+            )
+        catch e
             err_msg = sprint(showerror, e)
             return html_response(render_page(Tuple{String,String}[], nothing, nothing, html_escape(err_msg), "preprocess", tok, u; preprocess_error = err_msg, decimals = decimals))
         end
-        rethrow()
     end
 
-    new_u = update_upload(tok, u; x_col = x_idx, y_col = y_idx, rows = cleaned_rows, skipped_count = skipped)
-
-    status = skipped > 0 ?
-        "Loaded " * string(length(cleaned_rows)) * " rows (" * string(skipped) * " skipped for missing values) &middot; press Calculate" :
-        "Loaded " * string(length(cleaned_rows)) * " rows &middot; press Calculate"
-
-    return html_response(render_page(cleaned_rows, nothing, nothing, status, "data", tok, new_u; skipped_count = skipped, decimals = decimals))
+    return csv_clean_response(clean_x, clean_y)
 end
 
 function handler(req)::HTTP.Response
@@ -731,6 +954,10 @@ function _handler(req)::HTTP.Response
             return handle_predict(qs)
         elseif path == "/export"
             return handle_export(qs)
+        elseif path == "/preprocess"
+            return handle_preprocess(qs)
+        elseif path == "/export_clean"
+            return handle_export_clean(qs)
         end
     end
     return HTTP.Response(404; body = "Not Found")
