@@ -463,15 +463,15 @@ function render_page(
 <div class="window">
 <div class="titlebar">
   <span class="badge">&#x25A3;</span>
-  <span class="title-text">Linear Regression Calculator</span>
+  <span class="title-text">Linear Regression Project</span>
   <span class="winbtn">_</span>
   <span class="winbtn">x</span>
 </div>
 <div class="menubar">
-  <span class="menu-item">File</span>
-  <span class="menu-item">Edit</span>
-  <span class="menu-item">View</span>
-  <span class="menu-item">Help</span>
+  <span class="menu-item">Dela Cruz</span>
+  <span class="menu-item">Santiago</span>
+  <span class="menu-item">Villanueva</span>
+  <span class="menu-item">Professional Elective 3</span>
 </div>
 <header class="app-header">
   <h1>Julia Simple Linear Regression Calculator</h1>
