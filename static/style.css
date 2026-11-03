@@ -139,6 +139,7 @@ body {
 }
 
 #tab-data:checked + .tab-label,
+#tab-preprocess:checked + .tab-label,
 #tab-calculation:checked + .tab-label,
 #tab-result:checked + .tab-label {
   background: var(--title);
@@ -157,8 +158,13 @@ body {
 }
 
 #tab-data:checked ~ .tab-panels #panel-data,
+#tab-preprocess:checked ~ .tab-panels #panel-preprocess,
 #tab-calculation:checked ~ .tab-panels #panel-calculation,
-#tab-result:checked ~ .tab-panels #panel-result {
+#tab-result:checked ~ .tab-panels #panel-result,
+.window:has(#tab-data:checked) #panel-data,
+.window:has(#tab-preprocess:checked) #panel-preprocess,
+.window:has(#tab-calculation:checked) #panel-calculation,
+.window:has(#tab-result:checked) #panel-result {
   display: block;
 }
 
@@ -272,29 +278,110 @@ input[type="submit"].btn {
   border-radius: 0;
 }
 
-input[type="submit"].btn-add {
+input[type="submit"].btn-add,
+.btn-primary {
   background: var(--title);
   color: #ffffff;
 }
 
-input[type="submit"].btn-remove {
+input[type="submit"].btn-remove,
+.btn-secondary {
   background: var(--btn-face);
   color: var(--ink);
 }
 
 .btn-add:hover,
 input[type="submit"].btn-add:hover,
+.btn-primary:hover,
 .btn-remove:hover,
-input[type="submit"].btn-remove:hover {
+input[type="submit"].btn-remove:hover,
+.btn-secondary:hover {
   background: var(--menu);
+  color: var(--ink);
 }
 
 .btn-add:active,
 input[type="submit"].btn-add:active,
+.btn-primary:active,
 .btn-remove:active,
-input[type="submit"].btn-remove:active {
+input[type="submit"].btn-remove:active,
+.btn-secondary:active {
   transform: translate(2px, 2px);
   box-shadow: none;
+}
+
+/* ---------- Upload & Preprocess ---------- */
+.upload-form {
+  background: var(--menu);
+  border: 3px solid var(--outline);
+  padding: 12px;
+  margin-bottom: 16px;
+}
+
+.upload-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.upload-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.upload-label {
+  font-size: 13px;
+  font-weight: bold;
+  color: var(--ink);
+}
+
+.input-file {
+  font-size: 12px;
+  background: var(--paper);
+  border: 2px solid var(--outline);
+  padding: 4px;
+}
+
+.upload-checkbox {
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.upload-checkbox label {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.attr-table {
+  margin-top: 12px;
+  margin-bottom: 12px;
+}
+
+.attr-table th {
+  background: var(--menu);
+  color: var(--ink);
+  padding: 6px 10px;
+}
+
+.attr-table td {
+  padding: 6px 10px;
+  background: var(--paper);
+}
+
+.attr-name {
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.attr-actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---------- Calculation table ---------- */

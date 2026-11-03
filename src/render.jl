@@ -108,7 +108,7 @@ function render_calculation_panel(result)::String
     print(t, "          <th>Y</th>\n")
     print(t, "          <th>x &#x2212; x&#x0304;</th>\n")
     print(t, "          <th>y &#x2212; &#x0233;</th>\n")
-    print(t, "          <th>(x &#x2212; x&#x0304;)(&#x2212; &#x0233;)</th>\n")
+    print(t, "          <th>(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;)</th>\n")
     print(t, "          <th>(x &#x2212; x&#x0304;)&#x00B2;</th>\n")
     print(t, "          <th>&#x0176;</th>\n")
     print(t, "        </tr>\n")
@@ -130,15 +130,15 @@ function render_calculation_panel(result)::String
     print(t, "        <tr>\n")
     print(t, "          <td>&#x03A3;X = ", fmt(sum(result.x)), "</td>\n")
     print(t, "          <td>&#x03A3;Y = ", fmt(sum(result.y)), "</td>\n")
-    print(t, "          <td>&#x03A3;(x&#x0304;) = ", fmt(sum(result.dx)), "</td>\n")
-    print(t, "          <td>&#x03A3;(y&#x0304;) = ", fmt(sum(result.dy)), "</td>\n")
-    print(t, "          <td>&#x03A3;(x&#x0304;)(&#x0233;) = ", fmt(result.sxy), "</td>\n")
-    print(t, "          <td>&#x03A3;(x&#x0304;)&#x00B2; = ", fmt(result.sxx), "</td>\n")
+    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;) = ", fmt(sum(result.dx)), "</td>\n")
+    print(t, "          <td>&#x03A3;(y &#x2212; &#x0233;) = ", fmt(sum(result.dy)), "</td>\n")
+    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) = ", fmt(result.sxy), "</td>\n")
+    print(t, "          <td>&#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = ", fmt(result.sxx), "</td>\n")
     print(t, "          <td>&#x03A3;Predicted Y = ", fmt(sum(result.yhat)), "</td>\n")
     print(t, "        </tr>\n")
     print(t, "      </tfoot>\n")
     print(t, "    </table>\n")
-    line_b = "b = &#x03A3;(x &#x2212; x&#x0304;)(&#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = " * fmt(result.sxy) * " / " * fmt(result.sxx) * " = " * fmt(result.b)
+    line_b = "b = &#x03A3;(x &#x2212; x&#x0304;)(y &#x2212; &#x0233;) / &#x03A3;(x &#x2212; x&#x0304;)&#x00B2; = " * fmt(result.sxy) * " / " * fmt(result.sxx) * " = " * fmt(result.b)
     line_a = "a = &#x0233; &#x2212; b&#183;x&#x0304; = " * fmt(result.ybar) * " &#x2212; (" * fmt(result.b) * ")(" * fmt(result.xbar) * ") = " * fmt(result.a)
     line_eq = "&#x0177; = " * fmt(result.a) * " + " * fmt(result.b) * "x"
     print(t, "    <div class=\"formula\">\n")
@@ -180,7 +180,7 @@ function render_result_panel(result, error, status)::String
     return String(take!(t))
 end
 
-function render_preprocess_panel(u, tok::String)::String
+function render_preprocess_panel(u, tok::String; error::Union{Nothing,String} = nothing, skipped::Int = 0)::String
     t = IOBuffer()
     print(t, """<section class="tab-panel" id="panel-preprocess" role="tabpanel">
   <div class="panel-header">
@@ -188,43 +188,85 @@ function render_preprocess_panel(u, tok::String)::String
   </div>
   <div class="panel-body">
     <p class="panel-intro">Upload a .csv or .xlsx file, pick X and Y attributes, then apply to the grid.</p>
+    <form method="post" action="/upload" enctype="multipart/form-data" class="upload-form">
+      <input type="hidden" name="token" value="$(html_escape(tok))" />
+      <div class="upload-controls">
+        <div class="upload-field">
+          <label for="upload-file" class="upload-label">Choose file (.csv, .xlsx):</label>
+          <input type="file" id="upload-file" name="file" accept=".csv,.xlsx" required class="input-file" />
+        </div>
+        <div class="upload-checkbox">
+          <label>
+            <input type="checkbox" name="first_row_header" value="1" checked />
+            First row is header
+          </label>
+        </div>
+        <div class="upload-actions">
+          <input type="submit" value="Upload File" class="btn btn-add" />
+        </div>
+      </div>
+    </form>
 """)
+    if error !== nothing
+        print(t, "    <p class=\"error-text\">", html_escape(error), "</p>\n")
+    end
+    if skipped > 0
+        print(t, "    <div class=\"panel-note\">Skipped ", skipped, " row", (skipped == 1 ? "" : "s"), " with missing or empty cells.</div>\n")
+    end
+
     if u === nothing
         print(t, """    <div class="panel-note">No file loaded. Upload a .csv or .xlsx file to pick attributes.</div>
 """)
     else
-        xname = u.x_col <= length(u.columns) ? String(u.columns[u.x_col]) : "?"
-        yname = u.y_col <= length(u.columns) ? String(u.columns[u.y_col]) : "?"
+        xname = (1 <= u.x_col <= length(u.columns)) ? html_escape(u.columns[u.x_col]) : "?"
+        yname = (1 <= u.y_col <= length(u.columns)) ? html_escape(u.columns[u.y_col]) : "?"
         print(t, "    <div class=\"panel-note\">Selected attribute: X = " * xname * " &middot; Y = " * yname * "</div>\n")
-        print(t, """    <form method="post" action="/rows" class="grid-form">
-      <input type="hidden" name="token" value="TOKENPLACEHOLDER" />
+        print(t, """    <form method="post" action="/select" class="attr-form">
+      <input type="hidden" name="token" value="$(html_escape(tok))" />
+      <table class="calc-table attr-table">
+        <thead>
+          <tr>
+            <th style="width: 50px;">X</th>
+            <th style="width: 50px;">Y</th>
+            <th>Attribute / Column</th>
+            <th style="width: 80px;">Action</th>
+          </tr>
+        </thead>
+        <tbody>
 """)
         for i in 1:length(u.columns)
-            print(t, "      <div class=\"attr-row\">\n")
-            print(t, "        <label><input type=\"radio\" name=\"attr_x_" * string(i) * "\" value=\"" * string(i) * "\" /> X: " * String(u.columns[i]) * "</label>\n")
-            print(t, "        <label><input type=\"radio\" name=\"attr_y_" * string(i) * "\" value=\"" * string(i) * "\" /> Y: " * String(u.columns[i]) * "</label>\n")
-            print(t, "        <input type=\"submit\" name=\"attr_show\" value=\"" * string(i) * "\" class=\"btn-add\" />\n")
-            print(t, "      </div>\n")
-        end
-        print(t, """      <input type="submit" name="action" value="apply" class="btn-add" />
-    </form>
+            col_esc = html_escape(u.columns[i])
+            x_checked = (i == u.x_col) ? " checked" : ""
+            y_checked = (i == u.y_col) ? " checked" : ""
+            print(t, """          <tr>
+            <td style="text-align: center;">
+              <input type="radio" name="x_col" value="$(i)" id="x_col_$(i)"$(x_checked) />
+            </td>
+            <td style="text-align: center;">
+              <input type="radio" name="y_col" value="$(i)" id="y_col_$(i)"$(y_checked) />
+            </td>
+            <td>
+              <label for="x_col_$(i)" class="attr-name">$(col_esc)</label>
+            </td>
+            <td style="text-align: center;">
+              <button type="submit" formaction="/rows" name="attr_show" value="$(i)" class="btn btn-secondary">Show</button>
+            </td>
+          </tr>
 """)
-        print(t, """    <form method="post" action="/select" class="grid-form">
-      <input type="hidden" name="token" value="TOKENPLACEHOLDER" />
-      <input type="hidden" name="x" value="XPLACEHOLDER" />
-      <input type="hidden" name="y" value="YPLACEHOLDER" />
-      <input type="submit" name="action" value="apply" class="btn-add" />
+        end
+        print(t, """        </tbody>
+      </table>
+      <div class="grid-actions attr-actions">
+        <button type="submit" formaction="/rows" name="action" value="show" class="btn btn-secondary">Show Selection</button>
+        <button type="submit" name="action" value="apply" class="btn btn-add">Apply to grid</button>
+      </div>
     </form>
 """)
     end
     print(t, """  </div>
 </section>
 """)
-    html = String(take!(t))
-    html = replace(html, "TOKENPLACEHOLDER" => tok)
-    html = replace(html, "XPLACEHOLDER" => (u === nothing ? "" : String(u.columns[u.x_col])))
-    html = replace(html, "YPLACEHOLDER" => (u === nothing ? "" : String(u.columns[u.y_col])))
-    return html
+    return String(take!(t))
 end
 
 function render_page(
@@ -234,17 +276,19 @@ function render_page(
     status::String,
     tab::String,
     token::String = "",
-    upload = nothing,
+    upload = nothing;
+    preprocess_error::Union{Nothing,String} = nothing,
+    skipped_count::Int = 0,
 )::String
     grid_panel = render_grid_panel(rows; token = token)
     calc_panel = render_calculation_panel(result)
     result_panel = render_result_panel(result, error, status)
-    preprocess_panel = render_preprocess_panel(upload, token)
+    preprocess_panel = render_preprocess_panel(upload, token; error = preprocess_error, skipped = skipped_count)
 
     checked_data = tab == "data" ? " checked" : ""
+    checked_preprocess = tab == "preprocess" ? " checked" : ""
     checked_calculation = tab == "calculation" ? " checked" : ""
     checked_result = tab == "result" ? " checked" : ""
-    checked_preprocess = tab == "preprocess" ? " checked" : ""
 
     status_html = replace(status, r"(\d+(?:\.\d+)?)" => m -> "<span class=\"status-num\">" * String(m) * "</span>")
     status_bar_html = "<footer class=\"statusbar\">\n  <span class=\"status-badge\"></span>\n" * status_html * "</footer>\n</div>\n\n</body>\n</html>\n"
@@ -280,15 +324,20 @@ function render_page(
 <nav class="tabs" role="tablist">
   <input type="radio" name="tab" id="tab-data" value="data"$(checked_data)>
   <label class="tab-label" for="tab-data">Data</label>
+  <input type="radio" name="tab" id="tab-preprocess" value="preprocess"$(checked_preprocess)>
+  <label class="tab-label" for="tab-preprocess">Preprocess</label>
   <input type="radio" name="tab" id="tab-calculation" value="calculation"$(checked_calculation)>
   <label class="tab-label" for="tab-calculation">Calculation</label>
   <input type="radio" name="tab" id="tab-result" value="result"$(checked_result)>
   <label class="tab-label" for="tab-result">Result</label>
-  <input type="radio" name="tab" id="tab-preprocess" value="preprocess"$(checked_preprocess)>
-  <label class="tab-label" for="tab-preprocess">Preprocess</label>
 </nav>
 
 <div class="tab-panels">
+$(grid_panel)
+$(preprocess_panel)
+$(calc_panel)
+$(result_panel)
+</div>
 """ * grid_panel * """
 """ * preprocess_panel * """
 """ * calc_panel * """

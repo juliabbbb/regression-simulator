@@ -28,8 +28,8 @@ Simple Linear Regression Calculator — Julia-only logic + HTML/CSS UI (no JavaS
 
 ## Current state
 
-- Phases 1 and 2 done; `src/main.jl`, `src/render.jl`, `static/style.css`, `Project.toml` and `Manifest.toml` exist; `DESIGN.md` is the visual spec.
-- Work is tracked phase-by-phase in `PLAN.md` (§8 build phases); phase 1 (`regression.jl` + `excel_match.jl`) and phase 2 (`src/main.jl`, `src/render.jl`, `static/style.css`) are done.
+- Phases 1, 2, and 3 done; `src/importer.jl` (CSV/XLSX import & attribute selection), `src/main.jl`, `src/render.jl`, `static/style.css`, `Project.toml`, `Manifest.toml`, and test suites `test/excel_match.jl` and `test/phase3_test.jl` exist; `DESIGN.md` is the visual spec.
+- Work is tracked phase-by-phase in `PLAN.md` (§8 build phases); phase 1 (`regression.jl` + `excel_match.jl`), phase 2 (`src/main.jl`, `src/render.jl`, `static/style.css`), and phase 3 (`importer.jl`, Preprocess tab UI, attribute selection, validation, limits) are done.
 - **Phase rule:** update this Current state section at the end of every phase.
 
 ## Testing quirks

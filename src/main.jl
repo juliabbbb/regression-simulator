@@ -56,16 +56,20 @@ function parse_form(body::String)::Dict{String,String}
     return d
 end
 
-function read_full_body(req)::String
+function read_full_body_bytes(req)::Vector{UInt8}
     body = req.body
     buf = Vector{UInt8}(undef, 65536)
-    parts = String[]
+    out = IOBuffer()
     while true
         n = HTTP.body_read!(body, buf)
         n == 0 && break
-        push!(parts, String(buf[1:n]))
+        write(out, @view buf[1:n])
     end
-    return join(parts, "")
+    return take!(out)
+end
+
+function read_full_body(req)::String
+    return String(read_full_body_bytes(req))
 end
 
 const MAX_BODY_BYTES = 10 * 1024 * 1024
@@ -79,11 +83,11 @@ function Base.showerror(io::IO, e::RequestBodyTooLargeError)
 end
 
 function read_form(req)::Dict{String,String}
-    body = read_full_body(req)
-    if ncodeunits(body) > MAX_BODY_BYTES
-        throw(RequestBodyTooLargeError(ncodeunits(body)))
+    bytes = read_full_body_bytes(req)
+    if length(bytes) > MAX_BODY_BYTES
+        throw(RequestBodyTooLargeError(length(bytes)))
     end
-    return parse_form(body)
+    return parse_form(String(bytes))
 end
 
 struct UploadData
@@ -110,7 +114,7 @@ function store_upload(tok::String, columns::Vector{String}, values::Vector{Vecto
     lock(UPLOAD_LOCK) do
         if length(UPLOAD_ORDER) >= MAX_STORE_ENTRIES
             old = splice!(UPLOAD_ORDER, 1)
-            delete!(UPLOAD_STORE, old)
+            delete!(UPLOADS, old)
         end
         UPLOADS[tok] = UploadData(columns, values, first_row_header, time(), x_col, y_col, rows)
         push!(UPLOAD_ORDER, tok)
@@ -131,6 +135,9 @@ function get_upload(tok::String)::Union{UploadData, Nothing}
 end
 
 function upload_rows(u::UploadData)::Vector{Tuple{String,String}}
+    if !isempty(u.rows)
+        return u.rows
+    end
     rows = Tuple{String,String}[]
     isempty(u.values) && return rows
     ncol = length(u.values)
@@ -186,8 +193,8 @@ function run_regression(rows)::Tuple{Union{Nothing,Regression.SLRResult}, Union{
     return result, nothing
 end
 
-function html_response(html)::HTTP.Response
-    return HTTP.Response(200; body = html, headers = ["Content-Type" => "text/html; charset=utf-8"])
+function html_response(html; status::Int = 200)::HTTP.Response
+    return HTTP.Response(status; body = html, headers = ["Content-Type" => "text/html; charset=utf-8"])
 end
 
 function css_response()::HTTP.Response
@@ -212,41 +219,40 @@ function handle_rows(qs)::HTTP.Response
     action = get(qs, "action", "calculate")
     tok = get(qs, "token", "")
     u = valid_token(tok)
-    rows = u === nothing ? get_rows(qs) : upload_rows(u)
+
+    if haskey(qs, "attr_show") || action == "show"
+        if u === nothing
+            msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
+            return html_response(render_page(SAMPLE_ROWS, nothing, nothing, msg, "preprocess", ""; preprocess_error = msg))
+        end
+        new_x = u.x_col
+        new_y = u.y_col
+        if haskey(qs, "x_col")
+            xi = tryparse(Int, qs["x_col"])
+            (xi !== nothing && 1 <= xi <= length(u.columns)) && (new_x = xi)
+        end
+        if haskey(qs, "y_col")
+            yi = tryparse(Int, qs["y_col"])
+            (yi !== nothing && 1 <= yi <= length(u.columns)) && (new_y = yi)
+        end
+        lock(UPLOAD_LOCK) do
+            UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), new_x, new_y, u.rows)
+        end
+        u2 = get_upload(tok)
+        status = "Selected attribute: X = " * u2.columns[u2.x_col] * " &middot; Y = " * u2.columns[u2.y_col]
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, status, "preprocess", tok, u2))
+    end
+
+    grid_rows = get_rows(qs)
+    rows = !isempty(grid_rows) ? grid_rows : (u !== nothing && !isempty(u.rows) ? u.rows : SAMPLE_ROWS)
+
     remove_idx = 0
     for key in keys(qs)
         startswith(key, "rm_") || continue
         v = tryparse(Int, key[4:end])
         v === nothing || (remove_idx = v)
     end
-    if haskey(qs, "attr_show")
-        if u === nothing
-            return grid_response(get_rows(qs); token = tok)
-        end
-        x_col2 = 0
-        y_col2 = 0
-        for (k, v) in qs
-            if startswith(k, "attr_x_")
-                j = tryparse(Int, k[8:end])
-                j === nothing || (x_col2 = j)
-            elseif startswith(k, "attr_y_")
-                j = tryparse(Int, k[8:end])
-                j === nothing || (y_col2 = j)
-            end
-        end
-        if x_col2 == 0 && y_col2 == 0
-            x_col2 = u.x_col
-            y_col2 = u.y_col
-        end
-        lock(UPLOAD_LOCK) do
-            UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, u.timestamp, x_col2, y_col2, u.rows)
-        end
-        u2 = valid_token(tok)
-        if u2 === nothing
-            return grid_response(Tuple{String,String}[]; token = tok)
-        end
-        return html_response(render_page(upload_rows(u2), nothing, nothing, "Select an attribute to preview", "preprocess", tok, u2))
-    end
+
     if remove_idx != 0
         kept = Tuple{String,String}[]
         for (i, row) in enumerate(rows)
@@ -255,19 +261,16 @@ function handle_rows(qs)::HTTP.Response
         end
         if u !== nothing
             lock(UPLOAD_LOCK) do
-                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, u.timestamp, u.x_col, u.y_col, kept)
+                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), u.x_col, u.y_col, kept)
             end
         end
         return grid_response(kept; token = tok)
     elseif action == "add"
-        new_rows = Tuple{String,String}[]
-        for row in rows
-            push!(new_rows, row)
-        end
+        new_rows = copy(rows)
         push!(new_rows, ("", ""))
         if u !== nothing
             lock(UPLOAD_LOCK) do
-                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, u.timestamp, u.x_col, u.y_col, new_rows)
+                UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), u.x_col, u.y_col, new_rows)
             end
         end
         return grid_response(new_rows; token = tok)
@@ -281,114 +284,135 @@ end
 function handle_calculate(qs)::HTTP.Response
     tok = get(qs, "token", "")
     u = valid_token(tok)
-    rows = u === nothing ? get_rows(qs) : upload_rows(u)
+    grid_rows = get_rows(qs)
+    rows = !isempty(grid_rows) ? grid_rows : (u !== nothing && !isempty(u.rows) ? u.rows : SAMPLE_ROWS)
     result, err = run_regression(rows)
     return results_response(result, err, rows; token = tok)
 end
 
 function handle_upload(req)::HTTP.Response
-    ct = HTTP.header(req, "Content-Type")
-    body_str = read_full_body(req)
-    if ncodeunits(body_str) > MAX_BODY_BYTES
-        return oversize_response("Request body too large: " * string(ncodeunits(body_str)) * " bytes (maximum allowed: " * string(MAX_BODY_BYTES) * " bytes)")
+    ct = HTTP.header(req, "Content-Type", "")
+    body_bytes = read_full_body_bytes(req)
+    if length(body_bytes) > MAX_BODY_BYTES
+        return oversize_response("Request body too large: " * string(length(body_bytes)) * " bytes (maximum allowed: " * string(MAX_BODY_BYTES) * " bytes)")
     end
-    parts = HTTP.parse_multipart_form(ct, Vector{UInt8}(codeunits(body_str)))
-    println("DEBUG ct=", ct, " size=", ncodeunits(body_str), " head=", repr(first(body_str, 60)))
+
+    parts = HTTP.parse_multipart_form(ct, body_bytes)
+    if parts === nothing
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Invalid upload format", "preprocess", ""; preprocess_error = "Could not parse multipart form data."))
+    end
+
     file_part_name = ""
-    file_part_bytes = Vector{UInt8}()
-    first_row_header = true
-    if parts !== nothing
-        for p in parts
-            if p.name == "first_row_header"
-                first_row_header = String(read(p.data)) == "1"
-            end
-            if p.filename !== nothing && endswith(lowercase(String(p.filename)), ".xlsx")
+    file_part_bytes = UInt8[]
+    has_header_field = false
+    first_row_header = false
+    has_submit_marker = false
+
+    for p in parts
+        if p.name == "first_row_header"
+            has_header_field = true
+            val = lowercase(strip(String(read(p.data))))
+            first_row_header = (val in ("1", "true", "on", "yes"))
+        elseif p.name == "upload_submitted"
+            has_submit_marker = true
+        end
+        if p.filename !== nothing && !isempty(p.filename)
+            name_l = lowercase(String(p.filename))
+            if endswith(name_l, ".csv") || endswith(name_l, ".xlsx")
                 file_part_name = String(p.filename)
-                file_part_bytes = Vector{UInt8}(codeunits(String(read(p.data))))
+                file_part_bytes = read(p.data)
             end
         end
     end
-    if isempty(file_part_name)
-        return HTTP.Response(400; body = "No file uploaded", headers = ["Content-Type" => "text/plain"])
+
+    if !has_header_field && !has_submit_marker
+        first_row_header = true
     end
-    names, cols = read_upload_columns(file_part_bytes, file_part_name; first_row_header = first_row_header)
-    check_row_cap(count_rows(cols))
+
+    if isempty(file_part_name) || isempty(file_part_bytes)
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "No file uploaded", "preprocess", ""; preprocess_error = "No valid .csv or .xlsx file uploaded."))
+    end
+
+    names, cols = try
+        read_upload_columns(file_part_bytes, file_part_name; first_row_header = first_row_header)
+    catch e
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e)))
+    end
+
+    try
+        check_row_cap(count_rows(cols))
+    catch e
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, sprint(showerror, e), "preprocess", ""; preprocess_error = sprint(showerror, e)))
+    end
+
+    if isempty(cols) || count_rows(cols) == 0
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Uploaded file contains no data rows", "preprocess", ""; preprocess_error = "Uploaded file contains no data rows."))
+    end
+
     tok = make_token()
-    ycol = min(2, max(1, length(cols)))
-    rows = upload_rows(UploadData(names, cols, first_row_header, time(), 1, ycol, Tuple{String,String}[]))
-    store_upload(tok, names, cols, first_row_header, 1, ycol, rows)
-    return grid_response(rows; token = tok)
+    x_col = 1
+    y_col = min(2, length(cols))
+    u = UploadData(names, cols, first_row_header, time(), x_col, y_col, Tuple{String,String}[])
+    store_upload(tok, names, cols, first_row_header, x_col, y_col, Tuple{String,String}[])
+
+    status = "File uploaded: " * file_part_name * " &middot; " * string(count_rows(cols)) * " rows &middot; pick X and Y attributes"
+    return html_response(render_page(SAMPLE_ROWS, nothing, nothing, status, "preprocess", tok, u))
 end
 
 function handle_select(qs)::HTTP.Response
     tok = get(qs, "token", "")
     u = valid_token(tok)
     if u === nothing
-        return html_response("""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Linear Regression Calculator</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-<div class="window">
-<div class="tab-panels">
-<section class="tab-panel" id="panel-preprocess" role="tabpanel">
-<div class="panel-header">
-<h2>Preprocess</h2>
-</div>
-<div class="panel-body">
-<p class="panel-intro">Your upload session has expired. Please re-upload your file.</p>
-</div>
-</section>
-</div>
-</body>
-</html>
-""")
+        msg = !isempty(tok) ? "Your upload session has expired. Please re-upload your file." : "No file loaded. Please upload a file first."
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, msg, "preprocess", ""; preprocess_error = msg))
     end
-    x_val = get(qs, "x", "")
-    y_val = get(qs, "y", "")
-    x_col = 0
-    y_col = 0
-    for (i, n) in enumerate(u.columns)
-        if String(n) == x_val
-            x_col = i
+
+    x_idx = 0
+    y_idx = 0
+    if haskey(qs, "x_col")
+        x_idx = something(tryparse(Int, qs["x_col"]), 0)
+    end
+    if haskey(qs, "y_col")
+        y_idx = something(tryparse(Int, qs["y_col"]), 0)
+    end
+    if x_idx == 0 && haskey(qs, "x")
+        fx = findfirst(==(qs["x"]), u.columns)
+        x_idx = fx === nothing ? 0 : fx
+    end
+    if y_idx == 0 && haskey(qs, "y")
+        fy = findfirst(==(qs["y"]), u.columns)
+        y_idx = fy === nothing ? 0 : fy
+    end
+    if x_idx == 0
+        x_idx = u.x_col
+    end
+    if y_idx == 0
+        y_idx = u.y_col
+    end
+
+    if !(1 <= x_idx <= length(u.columns)) || !(1 <= y_idx <= length(u.columns))
+        return html_response(render_page(SAMPLE_ROWS, nothing, nothing, "Unknown column for X or Y", "preprocess", tok, u; preprocess_error = "Unknown column for X or Y."))
+    end
+
+    cleaned_rows, skipped = try
+        extract_selected_columns(u.values, u.columns, x_idx, y_idx, u.first_row_header)
+    catch e
+        if e isa NonNumericInputError
+            err_msg = sprint(showerror, e)
+            return html_response(render_page(SAMPLE_ROWS, nothing, nothing, err_msg, "preprocess", tok, u; preprocess_error = err_msg))
         end
-        if String(n) == y_val
-            y_col = i
-        end
+        rethrow()
     end
-    if x_col == 0 || y_col == 0
-        return html_response("""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>Linear Regression Calculator</title>
-<link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
-<div class="window">
-<div class="tab-panels">
-<section class="tab-panel" id="panel-preprocess" role="tabpanel">
-<div class="panel-header">
-<h2>Preprocess</h2>
-</div>
-<div class="panel-body">
-<p class="error-text">Unknown column for X or Y.</p>
-</div>
-</section>
-</div>
-</body>
-</html>
-""")
-    end
+
     lock(UPLOAD_LOCK) do
-        newu = UploadData(u.columns, u.values, u.first_row_header, u.timestamp, x_col, y_col, Tuple{String,String}[])
-        newu2 = UploadData(u.columns, u.values, u.first_row_header, u.timestamp, x_col, y_col, upload_rows(newu))
-        UPLOADS[tok] = newu2
+        UPLOADS[tok] = UploadData(u.columns, u.values, u.first_row_header, time(), x_idx, y_idx, cleaned_rows)
     end
-    return grid_response(upload_rows(newu2); token = tok)
+
+    status = skipped > 0 ?
+        "Loaded " * string(length(cleaned_rows)) * " rows (skipped " * string(skipped) * " empty rows) &middot; press Calculate" :
+        "Loaded " * string(length(cleaned_rows)) * " rows &middot; press Calculate"
+
+    return html_response(render_page(cleaned_rows, nothing, nothing, status, "data", tok, u))
 end
 
 function handler(req)::HTTP.Response
@@ -439,13 +463,14 @@ function _handler(req)::HTTP.Response
             return css_response()
         end
     elseif req.method == "POST"
+        if req.target == "/upload"
+            return handle_upload(req)
+        end
         qs = read_form(req)
         if req.target == "/rows"
             return handle_rows(qs)
         elseif req.target == "/calculate"
             return handle_calculate(qs)
-        elseif req.target == "/upload"
-            return handle_upload(req)
         elseif req.target == "/select"
             return handle_select(qs)
         end
@@ -453,4 +478,6 @@ function _handler(req)::HTTP.Response
     return HTTP.Response(404; body = "Not Found")
 end
 
-HTTP.serve(handler, "127.0.0.1", 8080)
+if abspath(PROGRAM_FILE) == @__FILE__
+    HTTP.serve(handler, "127.0.0.1", 8080)
+end
