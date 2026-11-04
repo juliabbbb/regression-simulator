@@ -1,6 +1,6 @@
 # Simple Linear Regression Calculator
 
-A Weka/Orange-style simple linear regression calculator written entirely in **Julia**. The interface is plain server-rendered HTML and CSS with **no JavaScript**. Enter or import X/Y data and the app shows the full calculation table, the slope and intercept with their formulas, an SVG scatter plot with the regression line, a summary of error metrics, a Predict box, and a CSV download.
+A Weka/Orange-style simple linear regression calculator written entirely in **Julia**. The interface is plain server-rendered HTML and CSS with **no JavaScript**. Enter or import X/Y data and the app shows the full calculation table, the slope and intercept with their formulas, an SVG scatter plot with the regression line, a summary of error metrics, a Predict box, and CSV downloads.
 
 > Screenshot placeholder: save an image as `docs/screenshot.png`, then replace this line with `![Screenshot](docs/screenshot.png)`.
 
@@ -8,6 +8,16 @@ A Weka/Orange-style simple linear regression calculator written entirely in **Ju
 
 - Manual X/Y grid with add/remove rows and a display precision setting (2-8 decimals). Calculations always use full `Float64`.
 - CSV and XLSX import with a sheet picker, X/Y attribute selection, and a histogram of the selected attribute.
+- **Data Cleaning and Preprocessing tab (13-step Weka-style pipeline):**
+  - Detect and standardize missing value tokens (`?`, `NA`, `null`, empty, `-`, etc.) and decimal commas (`3,5` -> `3.5`).
+  - Drop blank rows (where both X and Y carry no information).
+  - Remove exact duplicate (X, Y) records, keeping the first occurrence.
+  - Mean imputation computed from known values only, after duplicates are removed (default) or drop missing rows.
+  - Outlier detection via Excel-compatible IQR rule (`QUARTILE.INC`): flagged by default, with option to remove.
+  - Optional variable transforms: Normalize (0–1), Standardize (z-score), and Log (ln).
+  - Pre-calculation validation (finite values, uniqueness, minimum 2 rows, non-constant X).
+  - Issues found counts, Actions applied with stated reasons, Before/After summary table, and Cleaned data preview with imputed/outlier badges.
+  - **Download clean CSV** button.
 - Step-by-step table: X, Y, x − x̄, y − ȳ, (x − x̄)(y − ȳ), (x − x̄)², Predicted Y, with totals.
 - Slope and intercept formulas with the substituted values, and the equation ŷ = a + bx.
 - SVG scatter plot with the regression line and optional residual lines.
@@ -104,7 +114,7 @@ julia --project=. src/main.jl
 ## How to use it
 
 1. **Data tab:** type X and Y values (a sample is preloaded), then press **Calculate**.
-2. **Preprocess tab:** upload a `.csv` or `.xlsx` file, choose the X and Y attributes, and apply them to the grid. `examples/sample.csv` and `examples/sample.xlsx` are included.
+2. **Preprocess tab:** upload a `.csv` or `.xlsx` file, inspect structure and issues, configure cleaning options (missing value strategy, duplicate handling, IQR outlier treatment, and optional transforms), and apply the cleaned data to the grid or download the cleaned CSV. `examples/sample.csv`, `examples/sample.xlsx`, and `examples/dirty_sample.csv` are included.
 3. **Calculation tab:** see every step, the formulas, and the chart.
 4. **Result tab:** see the summary, predict ŷ for a new X, and **Download CSV**.
 
@@ -118,10 +128,10 @@ Run each test file with the project environment:
 julia --project=. test/excel_match.jl
 julia --project=. test/phase3_test.jl
 julia --project=. test/chart_test.jl
-julia --project=. test/export_test.jl
+julia --project=. test/preprocess_test.jl
 ```
 
-All tests should report only passes. Skip `export_test.jl` if your copy doesn't have it yet.
+All tests should report only passes.
 
 ## Verify results in Excel or Google Sheets
 
@@ -147,16 +157,18 @@ src/
   main.jl         HTTP server, routing, request handlers
   regression.jl   Simple linear regression math
   importer.jl     CSV / XLSX reading and column selection
+  preprocess.jl   13-step Weka-style data cleaning and preprocessing pipeline
   render.jl       HTML pages and panels
   chart.jl        SVG scatter plot and histogram
-  export.jl       CSV download
+  export.jl       CSV downloads (results and clean dataset)
 static/style.css  All styling (self-contained, no external fonts)
-test/             Test files
-examples/         Sample CSV and XLSX data
+test/             Test files (excel_match.jl, phase3_test.jl, chart_test.jl, preprocess_test.jl)
+examples/         Sample data (sample.csv, sample.xlsx, dirty_sample.csv)
 Dockerfile        Container image used for deployment
 render.yaml       Render Blueprint
 DESIGN.md         Visual design spec
 PLAN.md           Project plan and phase status
+PREPROCESSING.md  Preprocessing specification
 ```
 
 ## Deploy on Render

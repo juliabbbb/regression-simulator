@@ -322,6 +322,9 @@ input[type="submit"].btn-remove,
 .btn-remove {
   min-width: 32px;
   padding: 2px 8px;
+  text-align: center;
+  font-weight: bold;
+  cursor: pointer;
 }
 
 .btn-add:hover,
@@ -472,8 +475,15 @@ input[type="submit"].btn-remove:active,
   background: #FFE6EA;
 }
 
+.calc-table tbody tr.total-row td,
 .calc-table tfoot td {
   background: var(--menu);
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.calc-table tbody tr.average-row td {
+  background: #FFD2E2;
   color: var(--ink);
   font-weight: 700;
 }
@@ -1003,4 +1013,156 @@ input[type="submit"]:focus-visible,
   .formula p {
     overflow-wrap: anywhere;
   }
+}
+
+/* ---------- Preprocessing & Cleaning Tab ---------- */
+.preprocess-section {
+  margin-top: 18px;
+  padding: 12px;
+  background: var(--paper);
+  border: 2px solid var(--outline);
+  box-shadow: 2px 2px 0 var(--outline);
+}
+
+.issues-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.issue-card {
+  background: #FFE6EA;
+  border: 2px solid var(--outline);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.issue-label {
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.issue-val {
+  font-size: 22px;
+  font-weight: bold;
+  color: var(--hilite);
+  font-family: var(--font-num);
+}
+
+.actions-list {
+  margin: 8px 0 0 20px;
+  padding: 0;
+  color: var(--ink);
+  line-height: 1.5;
+}
+
+.actions-list li {
+  margin-bottom: 6px;
+}
+
+.badge-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: bold;
+  font-family: var(--font-ui);
+  border: 2px solid var(--outline);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge-pass {
+  background: var(--cyan);
+  color: #000000;
+}
+
+.badge-fail {
+  background: var(--danger);
+  color: #ffffff;
+}
+
+.badge-imputed {
+  background: var(--menu);
+  color: var(--ink);
+}
+
+.badge-outlier {
+  background: var(--yellow);
+  color: #000000;
+}
+
+.badge-clean {
+  background: #E8F5E9;
+  color: #2E7D32;
+  border-color: var(--outline);
+}
+
+.cell-imputed {
+  background: #FFE0B2 !important;
+  font-weight: bold;
+}
+
+.row-outlier {
+  background: #FFF9C4 !important;
+}
+
+.options-panel {
+  background: #FFF1EE;
+}
+
+.options-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin: 12px 0;
+}
+
+.option-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.option-field label {
+  font-weight: bold;
+  font-size: 14px;
+  color: var(--ink);
+}
+
+.select-option {
+  padding: 6px 8px;
+  border: 2px solid var(--outline);
+  background: #ffffff;
+  color: var(--ink);
+  font-family: var(--font-ui);
+  font-size: 14px;
+}
+
+.select-option:focus {
+  outline: 2px solid var(--cyan);
+}
+
+.preprocess-actions {
+  margin-top: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.transform-note {
+  background: #FFF9C4;
+  border: 2px solid #FBC02D;
+  color: #5D4037;
+  padding: 8px 12px;
+  margin-bottom: 14px;
+  box-shadow: 2px 2px 0 var(--outline);
+}
+
+.preview-table .cell-imputed {
+  outline: 2px dashed var(--hilite);
 }
